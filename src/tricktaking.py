@@ -45,14 +45,8 @@ class GameState(CheckedPVector):
 	__type__ = HeartsPlayer
 	#__invariant__ = len4
 
-	def trick_leader(self):
-		m = max(len(p.played) for p in self)
-		for i,p in enumerate(self):
-			if len(p.played)==m:
-				return i
 	def private_to(self, i): #i should not be able to see others' hands
 		return GameState.create([self[j] if j==i else self[j].privatize() for j in range(4)])
-
 	#returns both positional and list form.
 	def played_this_trick(self):
 		lens = [len(p.played) for p in self]
@@ -73,7 +67,6 @@ def deal_4_players(deck):
 #each player passes a callback to their function which is passed their hand and returns their choices.
 #those returns get combined together into the continuation function.
 #that returns a new continuation
-
 
 def HeartsGame():
 
@@ -115,7 +108,6 @@ def HeartsGame():
 						break
 				if two_of_clubs:
 					break
-			print(f"2 of clubs went to {leader_i}")
 			new_state = state.set(leader_i, leader_p.play_card(two_of_clubs))
 			return play_trick_card(nextp(leader_i), new_state)
 
@@ -125,11 +117,9 @@ def HeartsGame():
 		player = state[pid]
 		hand = player.hand
 		played, only_played = state.played_this_trick() #now indexed by pid
-		if len(only_played) != 4 and played[pid] != None:
-			print(f"{pid} already played card {played[pid].key}. cards in play: {[c.key if c else 'no' for c in played]}")
 		def cont(chooser_fns):
-			card = chooser_fns[pid](hand, state.private_to(pid), played)
-			valid_card = (len(only_played) == 0)
+			card = chooser_fns[pid](hand, state.private_to(pid))
+			valid_card = (len(only_played) == 4)
 			if not valid_card:
 				lsuit = only_played[0].suit
 				valid_card |= (card.suit == lsuit)
@@ -137,46 +127,33 @@ def HeartsGame():
 				valid_card &= (card in hand)
 				if not valid_card:
 					#try again with penalty
-					#print(f"{card.key} no match for {lsuit}")
 					return play_trick_card(pid, state.set(pid, player.with_penalty()))
 			
 			played_state = state.set(pid, player.play_card(card))
 
 			new_played, new_only_played = played_state.played_this_trick()
 
-			print(f"{pid} played {card.key}")
-
 			if len(new_only_played) < 4:
 				return play_trick_card(nextp(pid), played_state)
 			else:
 				led_card = new_only_played[nextp(pid)] #loop around to see the leader.
 				lsuit = led_card.suit
-				leader_id = state.trick_leader()
-				best_pid = leader_id
+				best_pid = -1
 				best_rank = led_card.rank
-				winner = played_state[best_pid]
+				winner = None
 				for i in range(4):
 					card2 = new_played[i]
-					if card2.suit == lsuit and card2.rank > best_rank:
-						#normalize to player id.
+					if card2.suit == lsuit and card2.rank >= best_rank:
 						best_pid = i
 						best_rank = card2.rank
 						winner = played_state[i]
-				print(f"finishing trick. winner: {best_pid} with {winner.played[-1].key}")
-				print(f"played cards {[c.key for c in new_played]}")
 				winner_state = played_state.set(best_pid, winner.set(won = winner.won.extend(new_played)))
 				if winner_state.hand_done():
-					print("hand done")
-					print(f"score so far: {[p.total_points() for p in winner_state]}")
-					print("--------------------------")
 					if winner_state.game_done():
-						print("game done")
 						return "game over", winner_state
 					else:
-						print("game not done")
 						return play_hand(winner_state)
 				else:
-					print("hand not done.")
 					return play_trick_card(best_pid, winner_state)	
 		return "play a card", cont
 
@@ -187,30 +164,99 @@ def HeartsGame():
 												    hand=s()) for _ in range(4)])
 	return play_hand(initial_state)
 
-def stupid_choose_pass(hand):
-	return rand.sample(hand, 3)
 
-all_stupid_pass = [stupid_choose_pass for _ in range(4)]
 
-def stupid_choose_trick(hand, state, played):
-	if len(hand):
-		#print("passed good hand")
-		return rand.choice(tuple(hand))
-	else:
-		print("was passed an empty hand?")
+def ControlledGame(game, controllers):
+	msg, cont = game()
+	while msg != "game over":
+		msg, cont = cont([c[msg] for c in controllers])
+	return cont
 
-all_stupid_choose = [stupid_choose_trick for _ in range(4)]
+#a completely random AI.
+def stupid_controller(pid):
+	def pass_left(hand):
+		return rand.sample(hand, 3)
+
+	def play_trick(hand, state):
+		if len(hand):
+			return rand.choice(tuple(hand))
+		else:
+			print("was passed an empty hand?")
+
+	#doesn't ask anything, just informing you for possible IO
+	def someone_else(other_pid, card, state):
+		pass
+
+	return {'pass left': pass_left, 
+			'play a card': play_trick,
+			'someone else': someone_else}
 
 def stupid_test():
-	msg, cont = HeartsGame()
-	while msg != "game over":
-		if msg=="pass left":
-			msg, cont = cont(all_stupid_pass)
-		elif msg=="play a card":
-			msg, cont = cont(all_stupid_choose)
+	game_state = ControlledGame(HeartsGame, [stupid_controller(i) for i in range(4)])
+	print([p.total_points() for p in game_state])
+
+def input_controller(pid):
+
+	def slash_commands(str):
+		if str[0] == '/':
+			command = str[1:]
+			if command == "quit":
+				pass
+			return True
+
+	def print_hand(hand):
+		print("your hand:")
+		print("|".join(f"{i}:{card.key}" for i,card in enumerate(hand)))
+
+	def pass_left(hand):
+		print(f"player {pid}, please choose 3 card indecies, separated by commas.")
+		hand = list(hand)
+		print_hand(hand)
+		try:
+			choices = [hand[int(sub)] for sub in input("--->").split(',')]
+			if len(choices)==3:
+				return choices
+		except:
+			pass
+		print("something wasn't right.")
+		return pass_left(hand)
+
+	def play_trick(hand, state):
+		print(f"---player {pid}'s turn---")
+
+		#TODO: print how the previous trick went.
+
+		played, just_played = state.played_this_trick()
+		nplayed = len(just_played)
+		if nplayed == 4:
+			print("You are leading the trick.")
 		else:
-			break
-	game_state = cont
-	print(p.total_points() for p in game_state)
+			leader = pid+1
+			while played[leader] == None:
+				leader = (leader+1)%4
+			print(f"played so far: {[c.key for c in played.extend(played)[leader:leader+nplayed]]}")
+			
+		hand = list(hand)
+		print_hand(hand)
+		try:
+			choice = hand[int(input("--->"))]
+			return choice
+		except:
+			pass
+		print("something wasn't right")
+		return play_trick(hand, state)
+
+	#doesn't ask anything, just informing you for possible IO
+	#(doesn't even give you information that a futre msg won't.)
+	def someone_else(other_pid, card, state):
+		print(f"{other_pid} played {card.key}")
+
+	return {'pass left': pass_left,
+			'play a card': play_trick,
+			'someone else': someone_else}
+
+def play_with_stupid():
+	game_state = ControlledGame(HeartsGame, [stupid_controller(i) if i>0 else input_controller(i) for i in range(4)])
+	print([p.total_points() for p in game_state])
 
 
