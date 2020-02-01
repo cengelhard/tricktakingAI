@@ -85,22 +85,32 @@ class GameState(PRecord):
 
 	def private_to(self, pid): #i should not be able to see others' hands
 		return self.map_players(lambda i, p: p if pid==i else p.privatize())
-	#returns both positional and list form.
+
 	def played_this_trick(self):
+		'''returns both positional and list form.'''
 		lens = [len(p.played) for p in self.players]
 		m = max(lens)
 		positional = pvector([p.played[-1] if len(p.played)==m else None for p in self.players])
 		return positional, pvector(filter(None, positional))
-	#returns none if there are 4 cards played... ambiguous as far as it knows.
+
 	def hand_done(self):
 		return all(len(p.played)==13 for p in self.players)
-	def game_done(self):
-		return any(p.total_points() > 50 for p in self.players)
 
+	def game_done(self):
+		return self.hand_count==2 #just play exactly 3 hands.
+		#return any(p.total_points() > 50 for p in self.players)
+
+	def legal_card(self, card, hand):
+		played, only_played = self.played_this_trick()
+		lsuit = played[self.trick_leader].suit
+		not_in_hand = not (card in hand)
+		not_first_play = len(only_played) != 4
+		wrong_suit = card.suit != lsuit
+		no_excuse = lsuit in [c.suit for c in hand]
+		return not(not_in_hand or (not_first_play and wrong_suit and no_excuse))
 
 def deal_4_players(deck):
 	return [pset(h) for h in [deck[:13], deck[13:26], deck[26:39], deck[39:]]]
-
 
 default_state = GameState(players=PlayerVec.create([HeartsPlayer() for _ in range(4)]))
 
@@ -166,39 +176,34 @@ def HeartsGame(initial_state = default_state, initial_cont = "play hand", initia
 	def play_trick_card(pid, state):
 		player = state.players[pid]
 		hand = player.hand
-		played, only_played = state.played_this_trick()
 		turn_state = state.set(current_turn=pid)
 		def cont(controllers):
+
 			card = controllers[pid].play_trick(turn_state.private_to(pid)) #only care about one of the returns.
-			lsuit = played[state.trick_leader].suit
-			not_in_hand = not (card in hand)
-			not_first_play = len(only_played) != 4
-			wrong_suit = card.suit != lsuit
-			no_excuse = lsuit in [c.suit for c in hand]
-			if not_in_hand or (not_first_play and wrong_suit and no_excuse):
+			if not turn_state.legal_card(card, hand):
 				#try again with penalty
 				return play_trick_card(pid, state.set_player(pid, player.with_penalty()))
 
 			played_state = turn_state.set_player(pid, player.play_card(card))
 			private_call(controllers, "alert_played", played_state)
 
-			new_played, new_only_played = played_state.played_this_trick()
+			played, only_played = played_state.played_this_trick()
 
-			if len(new_only_played) < 4:
+			if len(only_played) < 4:
 				return play_trick_card(nextp(pid), played_state)
 			else:
-				led_card = new_only_played[nextp(pid)] #loop around to see the leader.
+				led_card = only_played[nextp(pid)] #loop around to see the leader.
 				lsuit = led_card.suit
 				best_pid = -1
 				best_rank = led_card.rank
 				winner = None
 				for i in range(4):
-					card2 = new_played[i]
+					card2 = played[i]
 					if card2.suit == lsuit and card2.rank >= best_rank:
 						best_pid = i
 						best_rank = card2.rank
 						winner = played_state.players[i]
-				winner_state = played_state.set(trick_leader=best_pid).set_player(best_pid, winner.set(won = winner.won.extend(new_played)))
+				winner_state = played_state.set(trick_leader=best_pid).set_player(best_pid, winner.set(won = winner.won.extend(played)))
 				if winner_state.hand_done():
 					private_call(controllers, "alert_hand_complete", winner_state)
 					if winner_state.game_done():
@@ -347,7 +352,7 @@ def input_controller(pid):
 		except:
 			pass
 		print("something wasn't right.")
-		return pass_cards(hand)
+		return pass_cards(hand, passing_to, points)
 
 	def play_trick(hand, state):
 		print(f"---player {pid}'s turn---")
@@ -362,19 +367,22 @@ def input_controller(pid):
 			leader = pid+1
 			while played[leader] == None:
 				leader = (leader+1)%4
-			print(f"played so far: {[c.key for c in played.extend(played)[leader:leader+nplayed]]}")
+			print(f"{[(c.key if c else '__') for c in played]}")
+			#print(f"played so far: {[c.key for c in played.extend(played)[leader:leader+nplayed]]}")
 			
-		hand = list(hand)
-		print_hand(hand)
+		lhand = list(hand)
+		lhand.sort(key=lambda c: state.legal_card(c, hand))
+		lhand = lhand[::-1]
+		print_hand(lhand)
 		try:
-			choice = hand[int(_input(hand))]
+			choice = lhand[int(_input(lhand))]
 			return choice
 		except QuitGameException:
 			raise QuitGameException()
 		except:
 			pass
 		print("something wasn't right")
-		return play_trick(hand, state)
+		return play_trick(lhand, state)
 
 	def alert_played(other_pid, card):
 		pass#print(f"{other_pid} played {card.key}")
