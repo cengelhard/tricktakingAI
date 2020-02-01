@@ -5,7 +5,7 @@ from pyrsistent import (PRecord, field,
 						m, pmap,
 						CheckedPVector, pvector_field, PVector, v, pvector,
 						l, plist)
-from deck import deck52, Card
+from deck import deck52, Card, suit_keys
 import random as rand
 import sys
 
@@ -19,15 +19,15 @@ len4 = lambda p: (len(p)==4, "must be len 4")
 class HeartsPlayer(PRecord):
 
 	#cards you've played previously this hand.
-	played = pvector_field(Card)
+	played = pvector_field(Card, initial=v())
 	#cards you've won in previous tricks this hand.
-	won    = pvector_field(Card)
-	hand   = pset_field(Card)
+	won    = pvector_field(Card, initial=v())
+	hand   = pset_field(Card, initial=s())
 
 	#What you did in the previous hand.
-	prev_player = field() #field(type=('tricktaking.HeartsPlayer', type(None)))
+	prev_player = field(initial=None) #field(type=('tricktaking.HeartsPlayer', type(None)))
 
-	penalty = field(int)
+	penalty = field(int, initial=0)
 
 
 	def points_sans_penalty(self):
@@ -48,16 +48,41 @@ class HeartsPlayer(PRecord):
 class PlayerVec(CheckedPVector):
 	__type__ = HeartsPlayer
 
+unsigned = field(int, 
+				 initial=0, 
+				 invariant=lambda n: 
+				 	(n >= 0, f"unsigned int can't be negative. got {n}"))
+
 #the four players
 class GameState(PRecord):
 
 	players = field(PlayerVec, invariant=len4)
-	trick_leader = field(int, invariant=lambda x: (x<4, f"trick_leader cannot be {x}"))
+	trick_leader = field(int, 
+						 mandatory=True, 
+						 invariant=lambda x: (x<4, f"trick_leader cannot be {x}"), 
+						 initial=-1)
+	#starts at 0, goes up each hand.
+	hand_count = unsigned
+	#only used by play_card controller fns.
+	current_turn = unsigned
+
+	def _delta_pass(self, from_pid, dir):
+		return (from_pid + dir*(((self.hand_count)%3) + 1))%4
+
+	def passing_to(self,from_pid):
+		'''get the player that from_pid will be passing to.'''
+		return self._delta_pass(from_pid, 1)
+
+	def passing_from(self,from_pid):
+		'''inverse of passing_to'''
+		return self._delta_pass(from_pid, -1)
 
 	def set_player(self, pid, player):
 		return self.set(players=self.players.set(pid, player))
+
 	def map_players(self, f):
 		return self.set(players=PlayerVec.create(map(f, range(4), self.players)))
+
 	def private_to(self, pid): #i should not be able to see others' hands
 		return self.map_players(lambda i, p: p if pid==i else p.privatize())
 	#returns both positional and list form.
@@ -77,15 +102,21 @@ def deal_4_players(deck):
 	return [pset(h) for h in [deck[:13], deck[13:26], deck[26:39], deck[39:]]]
 
 
+default_state = GameState(players=PlayerVec.create([HeartsPlayer() for _ in range(4)]))
+
+
 #returns a function that starts the game.
 #a msg, 4-tuples of functions for choices, and a second 'continuation' function.
 #each player passes a callback to their function which is passed their hand and returns their choices.
 #those returns get combined together into the continuation function.
 #that returns a new continuation
-def HeartsGame():
+def HeartsGame(initial_state = default_state, initial_cont = "play hand", initial_pid = -1):
 
 	def nextp(i):
 		return (i+1)%4
+
+	def private_call(controllers, key, state):
+		return [controllers[i][key](state.private_to(i)) for i in range(4)]
 
 	#takes a previous state from previous hands.
 	def play_hand(prior_state):
@@ -93,24 +124,25 @@ def HeartsGame():
 		hands = None
 		if len(prior_state.players[0].hand):
 			#it is possible that the prior state already has hands set.
-			hands = [p.hand for p in prior_state]
+			hands = [p.hand for p in prior_state.players]
 		else:
-			deck = deck52.copy()
+			deck = list(deck52)
 			rand.shuffle(deck)
 			hands = deal_4_players(deck)
-
-		def pass_left(chooser_fns):
-			
-			choices = [pset(chooser_fns[i](hands[i])) for i in range(4)]
-			bad_choices = [len(cs) != 3 for cs in choices]
+		unpassed_state = prior_state.map_players(lambda i,p: p.set(hand=pset(hands[i])))
+		def pass_cards(controllers):
+			choices = [pset(choice) for choice in private_call(controllers, "pass_cards", unpassed_state)]
+			#choices = [pset(f(unpassed_state)) for f in chooser_fns]
+			bad_choices = [len(cs) != 3 or (not cs.issubset(unpassed_state.players[i].hand)) for i,cs in enumerate(choices)]
 			if any(bad_choices):
 				#try again with penalties.
-				return pass_left(prior_state.map_players(lambda i, p: p if not bad_choices[i] else p.with_penalty()))
-
-			new_hands = [hands[i].difference(choices[i]).union(choices[nextp(i)]) for i in range(4)]
+				return play_hand(prior_state.map_players(lambda i, p: p if not bad_choices[i] else p.with_penalty()))
+			def pass_helper(pass_to):
+				pass_from = prior_state.passing_from(pass_to)
+				return hands[pass_to].difference(choices[pass_to]).union(choices[pass_from]) 
+			new_hands = [pass_helper(i) for i in range(4)]
 			state = prior_state.map_players(lambda i, p: p.set(hand=new_hands[i], played=v(), prev_player=p))
 			
-			#imperative programming outa nowhere!
 			leader_i = 0
 			leader_p = None
 			two_of_clubs = None 
@@ -129,25 +161,26 @@ def HeartsGame():
 			new_state = state.set_player(leader_i, leader_p.play_card(two_of_clubs))
 			return play_trick_card(nextp(leader_i), new_state.set(trick_leader=leader_i))
 
-		return "pass left", pass_left
+		return unpassed_state, pass_cards
 
 	def play_trick_card(pid, state):
 		player = state.players[pid]
 		hand = player.hand
 		played, only_played = state.played_this_trick()
-		def cont(chooser_fns):
-			card = chooser_fns[pid](hand, state.private_to(pid))
-			valid_card = (len(only_played) == 4)
-			if not valid_card:
-				lsuit = only_played[0].suit
-				valid_card |= (card.suit == lsuit)
-				valid_card |= (lsuit not in [c.suit for c in hand])
-				valid_card &= (card in hand)
-				if not valid_card:
-					#try again with penalty
-					return play_trick_card(pid, state.set_player(pid, player.with_penalty()))
-			
-			played_state = state.set_player(pid, player.play_card(card))
+		turn_state = state.set(current_turn=pid)
+		def cont(controllers):
+			card = controllers[pid].play_trick(turn_state.private_to(pid)) #only care about one of the returns.
+			lsuit = played[state.trick_leader].suit
+			not_in_hand = not (card in hand)
+			not_first_play = len(only_played) != 4
+			wrong_suit = card.suit != lsuit
+			no_excuse = lsuit in [c.suit for c in hand]
+			if not_in_hand or (not_first_play and wrong_suit and no_excuse):
+				#try again with penalty
+				return play_trick_card(pid, state.set_player(pid, player.with_penalty()))
+
+			played_state = turn_state.set_player(pid, player.play_card(card))
+			private_call(controllers, "alert_played", played_state)
 
 			new_played, new_only_played = played_state.played_this_trick()
 
@@ -165,43 +198,102 @@ def HeartsGame():
 						best_pid = i
 						best_rank = card2.rank
 						winner = played_state.players[i]
-				winner_state = played_state.set_player(best_pid, winner.set(won = winner.won.extend(new_played)))
+				winner_state = played_state.set(trick_leader=best_pid).set_player(best_pid, winner.set(won = winner.won.extend(new_played)))
 				if winner_state.hand_done():
+					private_call(controllers, "alert_hand_complete", winner_state)
 					if winner_state.game_done():
-						return "game over", winner_state
+						return winner_state, None
 					else:
 						moon_shooters = pvector(p.shot_the_moon() for p in winner_state.players)
-						if (any(moon_shooters)):
+						winner_state = winner_state.set(hand_count=winner_state.hand_count+1)
+						if any(moon_shooters):
+							private_call(controllers, "alert_shot_moon", winner_state)
 							moon_shooter = moon_shooters.index(True)
 							return play_hand(winner_state.map_players(lambda i, p: p.with_penalty(-26 if i==moon_shooter else 26)))
 						else:
 							return play_hand(winner_state)
 				else:
+					private_call(controllers, "alert_trick_complete", winner_state)
 					return play_trick_card(best_pid, winner_state)	
-		return "play a card", cont
-
-	initial_state = GameState(players=PlayerVec.create([HeartsPlayer(played=v(),
-												    won = v(),
-												    prev_player = None,
-												    penalty = 0,
-												    hand=s()) for _ in range(4)]))
-	return play_hand(initial_state)
+		return turn_state, cont
 
 
+	return play_hand(initial_state) if initial_cont=="play hand" else play_trick(initial_state, initial_pid)
 
 def ControlledGame(game, controllers):
-	msg, cont = game()
-	while msg != "game over":
+	state, cont = game
+	while cont:
 		try:
-			msg, cont = cont([c[msg] for c in controllers])
+			state, cont = cont(controllers)
 		except QuitGameException:
 			print("quitting game")
 			return
 	return cont
 
+#basically just names to lambdas.
+class HeartsController(PRecord):
+	#required to play the game.
+	play_trick = field(mandatory=True)
+	pass_cards  = field(mandatory=True)
+
+	#for IO, no return value.
+	#these actually are mandatory when you pass it into the model.
+	#but HeartsAdapter fills them in.
+	alert_played         = field()
+	alert_trick_complete = field()
+	alert_hand_complete  = field()
+	alert_shot_moon      = field()
+
+#converts functions that take (state) into more useful args
+#basically this just covers boilerplate for hand-coded controllers.
+def HeartsAdapter(pid, ctrlr):
+
+	def my_hand(state):
+		return state.players[pid].hand
+
+	def pass_cards(state):
+		return ctrlr.pass_cards(my_hand(state), 
+								state.passing_to(pid), 
+								[p.total_points() for p in state.players])
+
+	def play_trick(state):
+		current_pid = state.current_turn
+		if current_pid == pid: #not necessary in practice but go off.
+			return ctrlr.play_trick(my_hand(state), state)
+
+	#alerts
+	#TODO: find a clever way to factor these.
+	def alert_played(state):
+		f = ctrlr.get('alert_played')
+		if f:
+			curr = state.current_turn
+			played, _ = state.played_this_trick()
+			f(curr, played[curr])
+	def alert_trick_complete(state):
+		f = ctrlr.get('alert_trick_complete')
+		if f:
+			played, _ = state.played_this_trick()
+			f(state, played)
+	def alert_hand_complete(state):
+		f = ctrlr.get('alert_hand_complete')
+		if f:
+			f(state.players) #probably want scores.
+	def alert_shot_moon(state):
+		f = ctrlr.get('alert_shot_moon')
+		if f:
+			f(state.trick_leader)
+
+	return HeartsController(
+		pass_cards = pass_cards,
+		play_trick = play_trick,
+		alert_played=alert_played,
+		alert_trick_complete=alert_trick_complete,
+		alert_hand_complete=alert_hand_complete
+	)
+
 #a completely random AI.
 def stupid_controller(pid):
-	def pass_left(hand):
+	def pass_cards(hand, passing_to, points):
 		return rand.sample(hand, 3)
 
 	def play_trick(hand, state):
@@ -210,17 +302,13 @@ def stupid_controller(pid):
 		else:
 			print("was passed an empty hand?")
 
-	#doesn't ask anything, just informing you for possible IO
-	def someone_else(other_pid, card, state):
-		pass
+	return HeartsAdapter(pid, HeartsController(pass_cards=pass_cards, play_trick=play_trick))
 
-	return {'pass left': pass_left, 
-			'play a card': play_trick,
-			'someone else': someone_else}
+from termcolor import cprint
 
 def stupid_test():
-	game_state = ControlledGame(HeartsGame, [stupid_controller(i) for i in range(4)])
-	print([p.total_points() for p in game_state])
+	game_state = ControlledGame(HeartsGame(), [stupid_controller(i) for i in range(4)])
+	#print([p.total_points() for p in game_state])
 
 class QuitGameException(Exception):
 	pass
@@ -229,7 +317,7 @@ def input_controller(pid):
 
 	def print_hand(hand):
 		print("your hand:")
-		print("|".join(f"{i}:{card.key}" for i,card in enumerate(hand)))
+		cprint("|".join(f"{i}:{card.key}" for i,card in enumerate(hand)), "red")
 
 	def _input(hand):
 
@@ -241,10 +329,13 @@ def input_controller(pid):
 			elif command == "hand":
 				print_hand(hand)
 				return _input(hand)
+			elif command == "score":
+				pass 
 		return string
 
-	def pass_left(hand):
+	def pass_cards(hand, passing_to, points):
 		print(f"player {pid}, please choose 3 card indecies, separated by commas.")
+		print(f"passing to: {passing_to}")
 		hand = list(hand)
 		print_hand(hand)
 		try:
@@ -256,7 +347,7 @@ def input_controller(pid):
 		except:
 			pass
 		print("something wasn't right.")
-		return pass_left(hand)
+		return pass_cards(hand)
 
 	def play_trick(hand, state):
 		print(f"---player {pid}'s turn---")
@@ -285,17 +376,49 @@ def input_controller(pid):
 		print("something wasn't right")
 		return play_trick(hand, state)
 
-	#doesn't ask anything, just informing you for possible IO
-	#(doesn't even give you information that a future msg won't.)
-	def someone_else(other_pid, card, state):
-		print(f"{other_pid} played {card.key}")
+	def alert_played(other_pid, card):
+		pass#print(f"{other_pid} played {card.key}")
 
-	return {'pass left': pass_left,
-			'play a card': play_trick,
-			'someone else': someone_else}
+	def alert_trick_complete(state, played):
+		print(f"{[c.key for c in played]}")
+		print(f"{state.trick_leader} wins!")
 
-def play_with_stupid():
-	game_state = ControlledGame(HeartsGame, [stupid_controller(i) if i>0 else input_controller(i) for i in range(4)])
-	print([p.total_points() for p in game_state.players] if game_state else "game quit early")
+	def alert_hand_complete(players):
+		print(f"hand score : {[p.points() for p in players]}")
+		print(f"total score: {[p.total_points() for p in players]}")
 
+	return HeartsAdapter(pid,HeartsController(
+		pass_cards=pass_cards,
+		play_trick=play_trick,
+		alert_played=alert_played,
+		alert_trick_complete=alert_trick_complete,
+		alert_hand_complete=alert_hand_complete))
 
+def play_with_stupid(num_humans=1, game=HeartsGame()):
+	game_state = ControlledGame(game, [stupid_controller(i) if i>num_humans-1 else input_controller(i) for i in range(4)])
+	print([p.total_points() for p in game_state.players] if game_state else "game over.")
+
+def test_bug():
+	test_bug_hands = [pset(filter(lambda card: card.suit == suit, deck52)) for suit in suit_keys]
+	test_bug_state = GameState(trick_leader = 0,
+							   players=PlayerVec.create(
+									[HeartsPlayer(played=v(),
+												  won = v(),
+												  prev_player = None,
+												  penalty = 0,
+												  hand=test_hand) 
+										for test_hand in test_bug_hands]))
+	return play_with_stupid(1, HeartsGame(test_bug_state))
+
+'''
+TODO:
+   - improve printing:
+      - sort hand
+      - highlight playable cards
+      + show intermediate plays
+      + show winner of trick.
+   + figure out how continuations are passed.
+     + write lookahead AI.
+   - proper passing and game end.
+   - write smart AI:
+'''
