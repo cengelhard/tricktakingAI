@@ -19,7 +19,10 @@ from heartsController import (ControlledGame,
 from learnController import sklearn_controller_raw
 
 from sklearn.neural_network import MLPRegressor
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model   import LinearRegression
+from sklearn.ensemble       import RandomForestRegressor
+from sklearn.ensemble       import GradientBoostingRegressor
+
 from sklearn.metrics import mean_squared_error as mse
 
 
@@ -101,14 +104,22 @@ def find_best_Dexter(iterations=10, innerations=30):
 
 			
 def Krang():
-	controller_cast['Krang'] = sklearn_controller_raw(MLPRegressor(hidden_layer_sizes=(500,400), max_iter=1000))
+	controller_cast['Krang'] = sklearn_controller_raw(MLPRegressor(hidden_layer_sizes=(400,40,4), max_iter=1000))
 
 def Walter():
 	controller_cast['Walter'] = sklearn_controller_raw(LinearRegression())
 
+def Galadriel():
+	controller_cast['Galadriel'] = sklearn_controller_raw(RandomForestRegressor(max_features=100, n_estimators=100))
+
+def Peppy():
+	controller_cast['Peppy'] = sklearn_controller_raw(GradientBoostingRegressor(n_estimators=200))
+
 def learn_all():
 	 Krang()
 	 Walter()
+	 Galadriel()
+	 Peppy()
 
 '''
 TODO:

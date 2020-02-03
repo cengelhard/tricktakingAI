@@ -13,14 +13,15 @@ from heartsController import (ControlledGame,
 
 
 #indecies for a series of card columns
-in_hand        = 0
-played_by      = in_hand+1
-played_index   = played_by+4
-won            = played_index+4
-cols_per_card  = won+4
-current_points = 52*cols_per_card
-trick_count    = current_points+4
-total_cols = trick_count + 1
+in_hand           = 0
+played_by         = in_hand+1
+played_index      = played_by+4
+won               = played_index+4
+cols_per_card     = won+4
+current_points    = 52*cols_per_card
+trick_count       = current_points+4
+points_this_trick = trick_count+0   #TODO: special col, must be filled in at end of trick
+total_cols = points_this_trick + 1
 
 
 #52 cards, current_points x 4, current_playerx4, trick_count, hand_count, expected points, error?
@@ -32,6 +33,7 @@ def featurize_state(state, row = None):
 	if row is None:
 		row = np.zeros(total_cols)
 	current_pid = state.current_turn()
+	#print(f"current player: {current_pid}")
 	player = state.players[current_pid]
 
 	for card in player.hand:
@@ -39,8 +41,10 @@ def featurize_state(state, row = None):
 
 	for player_i,player in enumerate(state.players):
 		#normalize it to relative of current player
-		player_i = (current_pid - player_i)%4
+		player_i = (current_pid - player_i - 1)%4
 		player = state.players[player_i]
+
+		#print(f"{player_i} has hand size of {len(player.hand)}")
 
 		row[current_points+player_i] = player.points()
 		for played_i,card in enumerate(player.played):
@@ -88,9 +92,9 @@ def np_from_controllers(controllers, iterations=10, fixed_rows=True):
 			y[yi] = (scores[int(y[yi])]-mins) / (maxs-mins)
 	return np.array(X),np.array(y)
 
-default_controllers = [hyper_smart_controller(), random_legal_controller, random_legal_controller, random_legal_controller]
+default_controllers = [hyper_smart_controller(), random_legal_controller, hyper_smart_controller(), random_legal_controller]
 def sklearn_controller_raw(model, controllers = [ctrl(i) for i, ctrl in enumerate(default_controllers)]):
-	X_train, y_train = np_from_controllers(controllers, 3)
+	X_train, y_train = np_from_controllers(controllers, 30)
 	model.fit(X_train, y_train)
 
 	no_pass = lambda _,__,___:None
