@@ -118,8 +118,8 @@ def deal_4_players(deck):
 
 default_state = GameState(players=PlayerVec.create([HeartsPlayer() for _ in range(4)]))
 
-def nextp(i):
-	return (i+1)%4
+def nextp(i,d=1):
+	return (i+d)%4
 
 #returns a function that starts the game.
 #a msg, 4-tuples of functions for choices, and a second 'continuation' function.
@@ -701,9 +701,10 @@ def Krang():
 
 def Walter():
 	return sklearn_controller_raw(LinearRegression())
-		
-controller_cast['Krang'] = Krang()
-controller_cast['Walter'] = Walter()
+
+def learn():
+	controller_cast['Krang'] = Krang()
+	controller_cast['Walter'] = Walter()
 
 '''
 TODO:
@@ -719,8 +720,10 @@ TODO:
    + write the recorder driver.
      + figure out a basic featurization.  
      - multithreading?
-   - make a sklearn controller
-     - takes a sklearn model
-     - uses the predict method to get a list of weights for different cards.
-     - uses the weights to randomly try a response.
+   + make a sklearn controller
+     + takes a sklearn model
+     + uses the predict method to get a list of weights for different cards.
+     + uses the weights to randomly try a response.
+   - split into multiple files
+   - fix feature engineering
 '''
