@@ -121,11 +121,8 @@ default_state = GameState(players=PlayerVec.create([HeartsPlayer() for _ in rang
 def nextp(i,d=1):
 	return (i+d)%4
 
-#returns a function that starts the game.
-#a msg, 4-tuples of functions for choices, and a second 'continuation' function.
-#each player passes a callback to their function which is passed their hand and returns their choices.
-#those returns get combined together into the continuation function.
-#that returns a new continuation
+#returns a tuple of (state, continuation)
+#pass the continuation a list of controllers, and it will return a new (state, continuation)
 def HeartsGame(initial_state = default_state, 
 			   initial_cont = "play hand", 
 		       initial_pid = -1,
