@@ -1,4 +1,4 @@
-from deckView import Card
+from deckView import Card, deck52
 from pyrsistent import (PRecord, field,
 						pset_field, PSet, s, pset,
 						m, pmap,
@@ -6,7 +6,8 @@ from pyrsistent import (PRecord, field,
 						l, plist)
 
 def hearts_points(card):
-	return 1 if card.suit == "♥" else 13 if card.key == "Q♠" else 0
+	#return 1 if card.suit == "♥" else 13 if card.key == "Q♠" else 0
+	return 2 if card.suit == "♥" else 0
 
 len4 = lambda p: (len(p)==4, "must be len 4")
 
@@ -81,6 +82,14 @@ class GameState(PRecord):
 
 	def private_to(self, pid): #i should not be able to see others' hands
 		return self.map_players(lambda i, p: p if pid==i else p.privatize())
+
+	#assumes everyone else has the entire deck in their hand.
+	def unprivate(self, pid):
+		possible_cards = pset(deck52)
+		possible_cards = possible_cards.difference(self.players[pid].hand)
+		for pl in self.players:
+			possible_cards = possible_cards.difference(pset(pl.won))
+		return self.map_players(lambda i, p: p if pid==i else p.set(hand=possible_cards))
 
 	def played_this_trick(self):
 		'''returns both positional and list form.'''

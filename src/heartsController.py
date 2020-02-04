@@ -13,7 +13,7 @@ class QuitGameException(Exception):
 	pass
 
 def ControlledGame(game, controllers):
-	state, cont = game
+	state, cont = game()
 	while cont:
 		try:
 			state, cont = cont(controllers)

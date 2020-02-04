@@ -71,7 +71,8 @@ def play_from_cast(names, game=HeartsGame(), num_games=1):
 	for i in range(4):
 		print(f"{names[i]}: {total_points[i]}")
 
-
+def quick_play(num_games, *names):
+	play_from_cast(names, HeartsGame(pass_phase=False, num_hands=1), num_games)
 
 def iterate_from_controllers(controllers, iterations):
 	scores = [0,0,0,0]
@@ -103,23 +104,29 @@ def find_best_Dexter(iterations=10, innerations=30):
 		mid = nextmid[scores.index(min(scores))]
 
 			
-def Krang():
-	controller_cast['Krang'] = sklearn_controller_raw(MLPRegressor(hidden_layer_sizes=(400,40,4), max_iter=1000))
+def Krang(amount_of_data=10):
+	controller_cast['Krang'] = sklearn_controller_raw(MLPRegressor(hidden_layer_sizes=(40,40), 
+																   max_iter=1000), 
+													  amount_of_data=amount_of_data)
 
-def Walter():
-	controller_cast['Walter'] = sklearn_controller_raw(LinearRegression())
+def Walter(amount_of_data=10):
+	controller_cast['Walter'] = sklearn_controller_raw(LinearRegression(),amount_of_data=amount_of_data)
 
-def Galadriel():
-	controller_cast['Galadriel'] = sklearn_controller_raw(RandomForestRegressor(max_features=100, n_estimators=100))
+def Galadriel(amount_of_data=10):
+	controller_cast['Galadriel'] = sklearn_controller_raw(
+		RandomForestRegressor(max_features=30, n_estimators=500),
+		amount_of_data=amount_of_data)
 
-def Peppy():
-	controller_cast['Peppy'] = sklearn_controller_raw(GradientBoostingRegressor(n_estimators=200))
+def Peppy(amount_of_data=10):
+	controller_cast['Peppy'] = sklearn_controller_raw(
+		GradientBoostingRegressor(n_estimators=200),
+		amount_of_data=amount_of_data)
 
-def learn_all():
-	 Krang()
-	 Walter()
-	 Galadriel()
-	 Peppy()
+def learn_all(amount_of_data=10):
+	 Krang(amount_of_data)
+	 Walter(amount_of_data)
+	 Galadriel(amount_of_data)
+	 Peppy(amount_of_data)
 
 '''
 TODO:
@@ -139,6 +146,9 @@ TODO:
      + takes a sklearn model
      + uses the predict method to get a list of weights for different cards.
      + uses the weights to randomly try a response.
-   - split into multiple files
+   + split into multiple files
    - fix feature engineering
+     + fix issue with normalizing player index
+     - add a "points gained this trick" column. perhaps one per player, even.
+     - add a "points on the table" column
 '''
