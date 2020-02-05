@@ -68,7 +68,7 @@ def HeartsGame(initial_state = default_state,
 							break
 					if two_of_clubs:
 						break
-				new_state = state.set_player(leader_i, leader_p.play_card(two_of_clubs))
+				new_state = state.set(last_played=leader_i).set_player(leader_i, leader_p.play_card(two_of_clubs))
 				return play_trick_card(nextp(leader_i), new_state.set(trick_leader=leader_i))
 
 			return unpassed_state, pass_cards
@@ -90,7 +90,7 @@ def HeartsGame(initial_state = default_state,
 					player = player.with_penalty()
 					substate = substate.set_player(pid, player) 
 
-				played_state = substate.set_player(pid, player.play_card(card))
+				played_state = substate.set(last_played=pid).set_player(pid, player.play_card(card))
 				private_call(controllers, "alert_played", played_state)
 
 				played, only_played = played_state.played_this_trick()
@@ -98,7 +98,7 @@ def HeartsGame(initial_state = default_state,
 				if len(only_played) < 4:
 					return play_trick_card(nextp(pid), played_state)
 				else:
-					led_card = only_played[nextp(pid)] #loop around to see the leader.
+					led_card = only_played[0]#only_played[nextp(pid)] #loop around to see the leader.
 					lsuit = led_card.suit
 					best_pid = -1
 					best_rank = led_card.rank

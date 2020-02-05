@@ -16,7 +16,7 @@ from heartsController import (ControlledGame,
 							  random_legal_controller,
 							  hyper_smart_controller,
 							  input_controller)
-from learnController import sklearn_controller_raw
+from learnController import sklearn_controller_raw, np_from_controllers, default_controllers
 
 from sklearn.neural_network import MLPRegressor
 from sklearn.linear_model   import LinearRegression
@@ -103,30 +103,80 @@ def find_best_Dexter(iterations=10, innerations=30):
 		delta /= 2
 		mid = nextmid[scores.index(min(scores))]
 
-			
-def Krang(amount_of_data=10):
-	controller_cast['Krang'] = sklearn_controller_raw(MLPRegressor(hidden_layer_sizes=(40,40), 
-																   max_iter=1000), 
-													  amount_of_data=amount_of_data)
+sklearn_model_cast = {
+	
+}
 
-def Walter(amount_of_data=10):
-	controller_cast['Walter'] = sklearn_controller_raw(LinearRegression(),amount_of_data=amount_of_data)
 
-def Galadriel(amount_of_data=10):
-	controller_cast['Galadriel'] = sklearn_controller_raw(
-		RandomForestRegressor(max_features=30, n_estimators=500),
-		amount_of_data=amount_of_data)
+def make_cast(name, skl_model):
+	def init(amount_of_data=10):
+		controller_cast[name] = sklearn_controller_raw(skl_model, amount_of_data=amount_of_data)
+		sklearn_model_cast[name] = skl_model
+	return init
 
-def Peppy(amount_of_data=10):
-	controller_cast['Peppy'] = sklearn_controller_raw(
-		GradientBoostingRegressor(n_estimators=200),
-		amount_of_data=amount_of_data)
+Krang     = make_cast("Krang", MLPRegressor(activation='relu', hidden_layer_sizes= (200, 100, 20), learning_rate='adaptive', max_iter=500))	
+Galadriel = make_cast("Galadriel", RandomForestRegressor(criterion='mse', max_features=15, n_estimators=1000))
+Peppy     = make_cast("Peppy", GradientBoostingRegressor(n_estimators=200))
+Walter    = make_cast("Walter", LinearRegression())
 
 def learn_all(amount_of_data=10):
 	 Krang(amount_of_data)
 	 Walter(amount_of_data)
 	 Galadriel(amount_of_data)
 	 Peppy(amount_of_data)
+
+from joblib import dump, load
+
+def dump_name(name):
+	dump(sklearn_model_cast[name], f"{name}.joblib")
+
+def load_name(name):
+	skl_model = load(f"{name}.joblib")
+	controller_cast[name] = sklearn_controller_raw(skl_model, amount_of_data=0)
+	sklearn_model_cast = skl_model
+
+def load_all():
+	load_name("Krang")
+	load_name("Galadriel")
+	load_name("Peppy")
+
+from sklearn.model_selection import GridSearchCV
+
+
+def grid_search(model_type, params):
+	def search():
+		model = model_type()
+		clf = GridSearchCV(model, params, n_jobs=-1, verbose=10, cv=4)
+		X,y = np_from_controllers(default_controllers, 100)
+		clf.fit(X,y)
+
+		print("Best parameters set found on development set:")
+		print(clf.best_params_)
+		return model
+	return search
+
+
+#{'criterion': 'mse', 'max_features': 15, 'n_estimators': 150}
+grid_search_rforest = grid_search(RandomForestRegressor, {
+		'max_features': [15,30,45],
+		'n_estimators': [50, 100, 150],
+		'criterion'   : ['mse', 'mae']})
+
+#Best parameters set found on development set:
+#{'activation': 'tanh', 'hidden_layer_sizes': (20, 20, 20), 'learning_rate': 'adaptive'}
+#{'activation': 'tanh', 'hidden_layer_sizes': 120}
+grid_search_mlp = grid_search(MLPRegressor, {
+		'hidden_layer_sizes': [(120, 60), (200, 100), (200, 100, 20)],
+		'activation'        : ['relu', 'tanh'],
+		'learning_rate'     : ['adaptive']
+	})
+
+grid_search_gboost = grid_search(GradientBoostingRegressor, {
+		#'loss'          : ['ls', 'la', 'huber', 'quantile'],
+		#'learning_rate' : [0.1, 0.01, 0.001],
+		'n_estimators'  : [100, 200, 400]
+	})
+
 
 '''
 TODO:

@@ -6,10 +6,11 @@ from pyrsistent import (PRecord, field,
 						l, plist)
 
 def hearts_points(card):
-	#return 1 if card.suit == "♥" else 13 if card.key == "Q♠" else 0
-	return 2 if card.suit == "♥" else 0
+	return 1 if card.suit == "♥" else 13 if card.key == "Q♠" else 0
+	#return 2 if card.suit == "♥" else 0
 
 len4 = lambda p: (len(p)==4, "must be len 4")
+
 
 #public information about a player in a hand of Hearts.
 class HeartsPlayer(PRecord):
@@ -49,18 +50,26 @@ unsigned = field(int,
 				 invariant=lambda n: 
 				 	(n >= 0, f"unsigned int can't be negative. got {n}"))
 
+player_id = field(int,
+				  initial=-1,
+				  invariant=lambda n: (n>=-1 and n<4, f"player_id can't be {n}"))
+
+#TODO: use this in a View refactor. 
+#class Trick(PRecord):
+#	played = pvector_field(Card, initial=pvector([None, None, None, None]))
+#	leader = player_id
+#	winner = player_id
+
 #the four players
 class GameState(PRecord):
 
 	players = field(PlayerVec, invariant=len4)
-	trick_leader = field(int, 
-						 mandatory=True, 
-						 invariant=lambda x: (x<4, f"trick_leader cannot be {x}"), 
-						 initial=-1)
+	trick_leader = player_id
 	hand_count = unsigned 
 	trick_count = field(int, initial=0, invariant = lambda n: (n >= 0 and n <= 13, f"trick count should be betwen 0 and 12. got {n}")) 
 	#error = field(bool, initial=False)
 	#featurization might want this.
+	last_played = player_id
 
 
 	def _delta_pass(self, from_pid, dir):
@@ -83,7 +92,7 @@ class GameState(PRecord):
 	def private_to(self, pid): #i should not be able to see others' hands
 		return self.map_players(lambda i, p: p if pid==i else p.privatize())
 
-	#assumes everyone else has the entire deck in their hand.
+	#assumes everyone else has all the unaccounted-for cards in their hand.
 	def unprivate(self, pid):
 		possible_cards = pset(deck52)
 		possible_cards = possible_cards.difference(self.players[pid].hand)
@@ -96,7 +105,8 @@ class GameState(PRecord):
 		lens = [len(p.played) for p in self.players]
 		m = max(lens)
 		positional = pvector([p.played[-1] if len(p.played)==m else None for p in self.players])
-		return positional, pvector(filter(None, positional))
+		tl = self.trick_leader
+		return positional, pvector(filter(None, positional.extend(positional)[tl:tl+4]))
 
 	def hand_done(self):
 		return self.trick_count == 12
@@ -104,9 +114,16 @@ class GameState(PRecord):
 
 	def current_turn(self):
 		'''whose turn is it?'''
-		_, played_so_far = self.played_this_trick()
-		num_played = len(played_so_far)
-		return (self.trick_leader + num_played)%4
+		if (len(self.players[0].played)):
+			_, played_so_far = self.played_this_trick()
+			num_played = len(played_so_far)
+			return (self.trick_leader + num_played)%4
+		else:
+			return -1
+
+	def prev_turn(self):
+		'''whose turn was it?'''
+		pass
 
 	def legal_card(self, card, hand):
 		played, only_played = self.played_this_trick()
