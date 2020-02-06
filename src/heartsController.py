@@ -162,9 +162,9 @@ def input_controller(pid):
 			print(f"{[(c.key if c else '__') for c in played]}")
 			#print(f"played so far: {[c.key for c in played.extend(played)[leader:leader+nplayed]]}")
 			
-		lhand = list(hand)
-		lhand.sort(key=lambda c: state.legal_card(c, hand))
-		lhand = lhand[::-1]
+		lhand = list(card for card in hand if state.legal_card(card, hand))
+		#lhand.sort(key=lambda c: state.legal_card(c, hand))
+		#lhand = lhand[::-1]
 		print_hand(lhand)
 		try:
 			choice = lhand[int(_input(lhand))]

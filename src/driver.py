@@ -19,13 +19,14 @@ from heartsController import (ControlledGame,
 from learnController import sklearn_controller_raw, np_from_controllers, default_controllers
 
 from sklearn.neural_network import MLPRegressor
-from sklearn.linear_model   import LinearRegression
+from sklearn.linear_model   import LinearRegression, LogisticRegression
 from sklearn.ensemble       import RandomForestRegressor
 from sklearn.ensemble       import GradientBoostingRegressor
 
 from sklearn.metrics import mean_squared_error as mse
+from sklearn.base    import clone as sk_clone
 
-
+#rand.seed(42)
 
 def play_with_stupid(num_humans=1, game=HeartsGame()):
 	game_state = ControlledGame(game, [random_controller(i) if i>num_humans-1 else input_controller(i) for i in range(4)])
@@ -107,17 +108,18 @@ sklearn_model_cast = {
 	
 }
 
-
 def make_cast(name, skl_model):
 	def init(amount_of_data=10):
 		controller_cast[name] = sklearn_controller_raw(skl_model, amount_of_data=amount_of_data)
+		controller_cast[name+"*"] = sklearn_controller_raw(skl_model, amount_of_data=0, look_ahead=True)
 		sklearn_model_cast[name] = skl_model
 	return init
 
-Krang     = make_cast("Krang", MLPRegressor(activation='relu', hidden_layer_sizes= (200, 100, 20), learning_rate='adaptive', max_iter=500))	
-Galadriel = make_cast("Galadriel", RandomForestRegressor(criterion='mse', max_features=15, n_estimators=1000))
+Krang     = make_cast("Krang", MLPRegressor(activation='relu', hidden_layer_sizes= (200, 200, 50), learning_rate='adaptive', max_iter=500))	
+Galadriel = make_cast("Galadriel", RandomForestRegressor(criterion='mse', max_features=100, n_estimators=800))
 Peppy     = make_cast("Peppy", GradientBoostingRegressor(n_estimators=200))
 Walter    = make_cast("Walter", LinearRegression())
+GlaDOS    = make_cast("GlaDOS", LogisticRegression())
 
 def learn_all(amount_of_data=10):
 	 Krang(amount_of_data)
@@ -131,14 +133,18 @@ def dump_name(name):
 	dump(sklearn_model_cast[name], f"{name}.joblib")
 
 def load_name(name):
-	skl_model = load(f"{name}.joblib")
-	controller_cast[name] = sklearn_controller_raw(skl_model, amount_of_data=0)
-	sklearn_model_cast = skl_model
+	try:
+		skl_model = load(f"{name}.joblib")
+		make_cast(name, skl_model)(amount_of_data=0)
+		sklearn_model_cast[name] = skl_model
+	except:
+		pass
 
 def load_all():
 	load_name("Krang")
 	load_name("Galadriel")
 	load_name("Peppy")
+	load_name("Walter")
 
 from sklearn.model_selection import GridSearchCV
 
@@ -147,7 +153,7 @@ def grid_search(model_type, params):
 	def search():
 		model = model_type()
 		clf = GridSearchCV(model, params, n_jobs=-1, verbose=10, cv=4)
-		X,y = np_from_controllers(default_controllers, 100)
+		X,y = np_from_controllers(default_controllers, 250)
 		clf.fit(X,y)
 
 		print("Best parameters set found on development set:")
@@ -158,47 +164,49 @@ def grid_search(model_type, params):
 
 #{'criterion': 'mse', 'max_features': 15, 'n_estimators': 150}
 grid_search_rforest = grid_search(RandomForestRegressor, {
-		'max_features': [15,30,45],
-		'n_estimators': [50, 100, 150],
-		'criterion'   : ['mse', 'mae']})
+		'max_features': [100, 150, 200],
+		'n_estimators': [200, 400, 800],
+		'criterion'   : ['mse']
+	})
 
 #Best parameters set found on development set:
 #{'activation': 'tanh', 'hidden_layer_sizes': (20, 20, 20), 'learning_rate': 'adaptive'}
 #{'activation': 'tanh', 'hidden_layer_sizes': 120}
 grid_search_mlp = grid_search(MLPRegressor, {
-		'hidden_layer_sizes': [(120, 60), (200, 100), (200, 100, 20)],
+		'hidden_layer_sizes': [(200, 50, 50), (50, 50, 50), (200, 200, 200), (200, 200, 50)],
 		'activation'        : ['relu', 'tanh'],
 		'learning_rate'     : ['adaptive']
 	})
 
 grid_search_gboost = grid_search(GradientBoostingRegressor, {
-		#'loss'          : ['ls', 'la', 'huber', 'quantile'],
-		#'learning_rate' : [0.1, 0.01, 0.001],
+		'loss'          : ['ls', 'huber', 'quantile'],
+		'learning_rate' : [0.1, 0.01, 0.001],
 		'n_estimators'  : [100, 200, 400]
 	})
+
+default_self_play = ["Krang", "Peppy", "Walter", "Galadriel"]
+def self_play(generations=3, cast = default_self_play):
+	load_all()
+	controllers = default_controllers#[controller_cast[name](i) for i,name in enumerate(cast)]
+	skmodels    = [sklearn_model_cast[name] for name in cast]
+	for gen_num in range(generations):
+		print(f"-------- generation {gen_num} --------")
+		controllers = [sklearn_controller_raw(sklearn_model_cast[name], 
+											  controllers, 
+											  amount_of_data=100)(i)
+						for i,name in enumerate(cast)]
+	for i, controller in enumerate(controllers):
+		controller_cast[cast[i]]=controller
 
 
 '''
 TODO:
-   + improve printing:
-      + sort hand
-      +- highlight playable cards
-      + show intermediate plays
-      + show winner of trick.
-   + figure out how continuations are passed.
-     + write lookahead AI.
-   + proper passing and game end.
-   + write smart AI:
-   + write the recorder driver.
-     + figure out a basic featurization.  
-     - multithreading?
-   + make a sklearn controller
-     + takes a sklearn model
-     + uses the predict method to get a list of weights for different cards.
-     + uses the weights to randomly try a response.
-   + split into multiple files
-   - fix feature engineering
-     + fix issue with normalizing player index
-     - add a "points gained this trick" column. perhaps one per player, even.
-     - add a "points on the table" column
+	- refactor View to use a Trick object.
+	- implement self-play
+	+ make something that can beat Dexter
+	- impement the pass phase.
+	- make some very large datasets
+	- optimize the learning process
+	- make look-ahead worthwhile
+
 '''

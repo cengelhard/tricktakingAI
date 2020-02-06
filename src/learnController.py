@@ -1,6 +1,7 @@
 
 import random as rand
 import numpy as np
+from numpy.random import choice
 from deckView import deck52
 from heartsView import hearts_points
 from heartsModel import HeartsGame
@@ -13,12 +14,13 @@ from heartsController import (ControlledGame,
 import math
 
 
+
 #indecies for a series of card columns
 in_hand           = 0
-played_by         = in_hand+1
-#played_index      = played_by+4
-won               = played_by+4
-cols_per_card     = won+1#played_by+4#won+4
+played            = in_hand+1
+won               = played+1#played_by+4 #did you win this card?
+on_table          = won+1
+cols_per_card     = on_table+1#won+4
 
 current_points    = 52*cols_per_card
 trick_count       = current_points+4
@@ -29,11 +31,11 @@ points_won        = points_in_hand+1 #total number of points that have been won 
 danger            = points_won+1 #points unaccounted-for * trick_count
 highest_rank      = danger+1 #highest rank on the table.
 recent_rank       = highest_rank+1  #rank of most recently played card.
-recent_QS         = recent_rank+1 #was the played card the Queen.
-rank_ratio        = recent_QS+1
-new_trick         = rank_ratio+1
+recent_points     = recent_rank+1 #was the played card the Queen.
+rank_ratio        = recent_points+1
+recent_on_suit    = rank_ratio+1
+new_trick         = recent_on_suit+1
 total_cols = new_trick + 1
-
 
 #52 cards, current_points x 4, current_playerx4, trick_count, hand_count, expected points, error?
 
@@ -51,72 +53,71 @@ def featurize_state(state, row = None):
 	for card in player.hand:
 		row[card_to_col(card)+in_hand] = 1
 
-	for objective_i,player in enumerate(state.players):
-		#normalize it to relative of current player
+	for card in player.won:
+		row[card_to_col(card)+won] = 1
 
-		player_i = (current_pid - objective_i)%4
-		inner_player = state.players[player_i]
+	for card in player.played:
+		row[card_to_col(card)+played] = 1
 
-		row[current_points+player_i] = inner_player.points_sans_penalty()/26
-		#print(f"{player_i} has hand size of {len(player.hand)}")
+	_, played_cards = state.played_this_trick()
 
-		row[player_i] = inner_player.points()
-		for played_i,card in enumerate(inner_player.played):
-			card_i = card_to_col(card)
-			row[card_i+played_by+player_i] = 1
-			#row[card_i+played_index+player_i] = played_i/13
+	for card in played_cards:
+		row[card_to_col(card)+on_table]=1
 
-		for card in player.won:
-			card_i = card_to_col(card)
-			row[card_i+won+player_i] = 1
-	_, played = state.played_this_trick()
 	row[trick_count]     = state.trick_count/13
 	row[points_on_table] = sum(map(hearts_points, state.played_this_trick()[1]))/26
 	row[points_in_hand]  = sum(map(hearts_points, player.hand))/26
 	row[points_won]      = sum(sum(map(hearts_points, p.won)) for p in state.players)/26
 	row[danger]          = row[trick_count] * (1-row[points_on_table]-row[points_in_hand]-row[points_won])
-	row[highest_rank]    = (max(card.rank for card in played)+1)/13
-	row[recent_rank]     = (played[-1].rank+1)/13
-	row[recent_QS]       = played[-1].key == "Q♠"
+	row[highest_rank]    = (max(card.rank for card in played_cards)+1)/13
+	row[recent_rank]     = (played_cards[-1].rank+1)/13
+	row[recent_points]   = hearts_points(played_cards[-1])/13
 	row[rank_ratio]      = row[recent_rank] / row[highest_rank]
-	row[new_trick]       = len(played)%4 == 0
+	row[recent_on_suit]  = played_cards[0].suit == played_cards[-1].suit
+	row[new_trick]       = len(played_cards)%4 == 0
 	return row
 
 from collections import Counter
 
 #a model for every trick?
+#fewer data points per game?
 
 quick_game = HeartsGame(pass_phase=False, num_hands=1)
 default_controllers = [ctrl(i) for i, ctrl in enumerate([hyper_smart_controller(), random_legal_controller, hyper_smart_controller(), random_legal_controller])]
-default_controllers = [ctrl(i) for i, ctrl in enumerate([random_legal_controller, random_legal_controller, random_legal_controller, random_legal_controller])]
-default_controllers = [ctrl(i) for i, ctrl in enumerate([hyper_smart_controller(), hyper_smart_controller(), hyper_smart_controller(), hyper_smart_controller()])]
+#default_controllers = [ctrl(i) for i, ctrl in enumerate([random_legal_controller, random_legal_controller, random_legal_controller, random_legal_controller])]
+#default_controllers = [ctrl(i) for i, ctrl in enumerate([hyper_smart_controller(), hyper_smart_controller(), hyper_smart_controller(), hyper_smart_controller()])]
 #returns X, y
-def np_from_controllers(controllers=default_controllers, iterations=10, fixed_rows=True):
-	expected_rows = iterations*52
+def np_from_controllers(controllers=default_controllers, iterations=10, samples=4, fixed_rows=True):
+	expected_rows = iterations*samples
 	X = [] if not fixed_rows else np.zeros(shape=(expected_rows, total_cols))
 	y = [] if not fixed_rows else np.zeros(shape=(expected_rows,))
 	xi = 0
 	for i in range(iterations):
-		#rand.shuffle(controllers)
+		sample_turns = set(choice(range(52), samples, replace=False))
 		state, cont = quick_game()
 		starting_xi = xi
+		turn_index = 0
 		y_pids = []
 		while cont:
 			prev_turn = state.current_turn()
 			if prev_turn == -1: #it's the first turn.
 				prev_turn = state.trick_leader #it was the 2 of clubs.
 			state, cont = cont(controllers)
-			if not fixed_rows:
-				X.append(featurize_state(state))
-				y.append(prev_turn) #temporarily store the current player.
-			else:
-				featurize_state(state, X[xi])
-				y_pids.append(prev_turn) #temporarily store the current player.
-			xi += 1
+			
+			if turn_index in sample_turns:
+				if not fixed_rows:
+					X.append(featurize_state(state))
+					y.append(prev_turn) #temporarily store the current player.
+				else:
+					featurize_state(state, X[xi])
+					y_pids.append(prev_turn) #temporarily store the current player.
+				xi += 1
+			turn_index += 1
+			
 
 		if fixed_rows:
-			assert (xi - starting_xi) == 52, "should be 52 rows per hand in fixed_rows"
-		assert len(y_pids)==52, f"um what {len(y_pids)}"
+			assert (xi - starting_xi) == samples, "should be 52 rows per hand in fixed_rows"
+		assert len(y_pids)==samples, f"um what {len(y_pids)}"
 		scores = [p.total_points() for p in state.players]
 		#print("scores though.")
 		#print(scores)
@@ -129,7 +130,8 @@ def np_from_controllers(controllers=default_controllers, iterations=10, fixed_ro
 
 import matplotlib.pyplot as plt
 
-def sklearn_controller_raw(model, controllers = default_controllers, amount_of_data=10):
+
+def sklearn_controller_raw(model, controllers = default_controllers, amount_of_data=10, look_ahead=False):
 	
 	no_pass = lambda _,__,___:None
 
@@ -147,7 +149,7 @@ def sklearn_controller_raw(model, controllers = default_controllers, amount_of_d
 		diff = y_test - y_pred
 
 		fig, axs = plt.subplots(3)
-		bins = 26
+		bins = 25
 		axs[0].hist(y_test, bins=bins, label="actual")
 		axs[1].hist(y_pred, bins=bins, label="predicted")
 		axs[2].hist(diff,   bins=bins*2, label="diff")
@@ -180,7 +182,7 @@ def sklearn_controller_raw(model, controllers = default_controllers, amount_of_d
 			trick = state.trick_count
 			state, cont = cont(controllers)
 			opponent_preds = []
-			while False and cont and state.trick_count == trick: #for each next player in the trick.
+			while look_ahead and cont and state.trick_count == trick: #for each next player in the trick.
 				#try a few cards, and find a "worst case" where that player is happiest.
 				#15-trick so that it tries 14 on trick 0, 1 on trick 13
 				states_conts = [cont(controllers) for _ in range(min(4,14-trick))]
@@ -220,26 +222,15 @@ def sklearn_controller_raw(model, controllers = default_controllers, amount_of_d
 			if num_others: #if you aren't last in the trick
 				#get the mean of how happy/unhappy each opponent is with a random card they might play.
 				opponent_y = np.array([np.mean(preds) for preds in X_opponent_preds])
-				
-				def normalize(xs):
-					return xs
-					#return xs - min(xs) + 0.01
-					
-					#mx, mn = max(xs), min(xs)
-					#if mx==mn:
-					#	return xs
-					#return ((xs-mn) / (mx-mn)) + .01
+				opponent_y = 1-opponent_y
 
-				opponent_y = normalize(1-opponent_y)
-				y_hat = normalize(y_hat)
+				#print(["%.2f"%y for y in y_hat])
+				#print(["%.2f"%y for y in opponent_y])
 
-				print(["%.2f"%y for y in y_hat])
-				print(["%.2f"%y for y in opponent_y])
-				
-				y_hat = y_hat * opponent_y**num_others
+				y_hat = y_hat * opponent_y
 
-				print([c.key+"  " for c in lhand])
-				print(["%.2f"%y for y in y_hat])
+				#print([c.key+"  " for c in lhand])
+				#print(["%.2f"%y for y in y_hat])
 			
 			return lhand[np.argmin(y_hat)]
 
