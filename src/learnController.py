@@ -135,7 +135,7 @@ def sklearn_controller_raw(model, controllers = default_controllers, amount_of_d
 	
 	no_pass = lambda _,__,___:None
 
-	if amount_of_data: #assume the model is already trained otherwise.
+	if amount_of_data and type(amount_of_data)==int: #assume the model is already trained otherwise.
 		X_train, y_train = np_from_controllers(controllers, amount_of_data)
 		model.fit(X_train, y_train)
 
@@ -165,6 +165,9 @@ def sklearn_controller_raw(model, controllers = default_controllers, amount_of_d
 		print(f"pred spread: {(min(y_pred), np.median(y_pred), max(y_pred))}")
 		print(f"pred: {y_pred[50:55]}")
 		print(f"actl: {y_test[50:55]}")
+	elif type(amount_of_data)==tuple:
+		X_train, y_train = amount_of_data
+		model.fit(X_train, y_train)
 
 	def controller(pid):
 

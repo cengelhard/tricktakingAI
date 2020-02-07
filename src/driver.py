@@ -26,6 +26,8 @@ from sklearn.ensemble       import GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.base    import clone as sk_clone
 
+import numpy as np
+
 #rand.seed(42)
 
 def play_with_stupid(num_humans=1, game=HeartsGame()):
@@ -71,9 +73,10 @@ def play_from_cast(names, game=HeartsGame(), num_games=1):
 	print("final scores:")
 	for i in range(4):
 		print(f"{names[i]}: {total_points[i]}")
+	return total_points
 
 def quick_play(num_games, *names):
-	play_from_cast(names, HeartsGame(pass_phase=False, num_hands=1), num_games)
+	return play_from_cast(names, HeartsGame(pass_phase=False, num_hands=1), num_games)
 
 def iterate_from_controllers(controllers, iterations):
 	scores = [0,0,0,0]
@@ -120,6 +123,13 @@ Galadriel = make_cast("Galadriel", RandomForestRegressor(criterion='mse', max_fe
 Peppy     = make_cast("Peppy", GradientBoostingRegressor(n_estimators=200))
 Walter    = make_cast("Walter", LinearRegression())
 GlaDOS    = make_cast("GlaDOS", LogisticRegression())
+
+cast_factories = {
+	'Krang':     Krang,
+	'Galadriel': Galadriel,
+	'Peppy':     Peppy,
+	'Walter':    Walter,
+}
 
 def learn_all(amount_of_data=10):
 	 Krang(amount_of_data)
@@ -199,6 +209,41 @@ def self_play(generations=3, cast = default_self_play):
 		controller_cast[cast[i]]=controller
 
 
+def deedee_fight(names, iterations=40, start=50, step=50, games_to_play=50, samples=4):
+	points_by_name = {name: [] for name in names}
+	xs = np.arange(start,start + step*iterations,step)
+	for data in xs:
+		tup = np_from_controllers(iterations=data, samples=samples) #use default controllers to train.
+		for name in names:
+			cont_factory = cast_factories.get(name)
+			if cont_factory:
+				cont_factory(amount_of_data=tup)
+			results = quick_play(games_to_play, name, "Deedee", "Deedee", "Deedee")
+			points_by_name[name].append(results[0]/sum(results))
+	def graph_it(ax):
+		for name, ys in points_by_name.items():
+			ax.plot(xs*samples, np.array(ys)/games_to_play, label=name)
+		ax.legend()
+		ax.set_xlabel("training set size")
+		ax.set_ylabel("average score")
+		return ax
+	return points_by_name, graph_it
+
+def ugh(ax, stats):
+	xs = np.arange(100,100*(20+1),100)
+	for name in ["Walter", "Peppy", "Galadriel", "Krang"]: 
+		ys = stats[name] 
+		ax.scatter(xs*4, np.array(ys), marker='.')
+		line = np.poly1d(np.polyfit(xs,ys,3))
+		ax.plot(xs*4, [line(x) for x in xs], label=name)
+	ax.plot([0,8000], [0.25, 0.25], label="Deedee avg")
+	ax.plot([0,8000], [0.159, 0.159], label="Dexter avg")
+	ax.legend(loc='best')
+	ax.set_xlabel("training set size")
+	ax.set_ylabel("average score %")
+	ax.set_ylim(0.1,0.3)
+	ax.set_title("AIs vs. 3 Deedees")
+
 '''
 TODO:
 	- refactor View to use a Trick object.
@@ -208,5 +253,10 @@ TODO:
 	- make some very large datasets
 	- optimize the learning process
 	- make look-ahead worthwhile
+
+
+
+
+
 
 '''
