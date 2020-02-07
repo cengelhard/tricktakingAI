@@ -38,9 +38,6 @@
 - Krang: Krang is a neural network. 
 - Walter: Walter uses a Linear Regression model. 
 - \<name\>\*: A version of the same ML algorithm that looks 2-3 moves ahead instead of just 1.
- 
-![Deedee and Dexter](deedee_dexter.jpg | width=400) ![Walter](walter_white.jpeg | width=200)
-![Galadriel](galadriel_picture.png | width=200) ![Krang](krang_tmnt.jpeg | width=200) ![Peppy](peppy_picture.jpeg | width=200)
 
 
 ## Data
