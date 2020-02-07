@@ -230,14 +230,15 @@ def deedee_fight(names, iterations=40, start=50, step=50, games_to_play=50, samp
 	return points_by_name, graph_it
 
 def ugh(ax, stats):
-	xs = np.arange(100,100*(20+1),100)
+	xs = np.arange(100,100*(30+1),100)
 	for name in ["Walter", "Peppy", "Galadriel", "Krang"]: 
 		ys = stats[name] 
+		print(len(xs), len(ys))
 		ax.scatter(xs*4, np.array(ys), marker='.')
-		line = np.poly1d(np.polyfit(xs,ys,3))
+		line = np.poly1d(np.polyfit(xs,ys,1))
 		ax.plot(xs*4, [line(x) for x in xs], label=name)
-	ax.plot([0,8000], [0.25, 0.25], label="Deedee avg")
-	ax.plot([0,8000], [0.159, 0.159], label="Dexter avg")
+	ax.plot([0,12000], [0.25, 0.25], label="Deedee avg")
+	ax.plot([0,12000], [0.159, 0.159], label="Dexter avg")
 	ax.legend(loc='best')
 	ax.set_xlabel("training set size")
 	ax.set_ylabel("average score %")

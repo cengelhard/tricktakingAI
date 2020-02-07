@@ -76,7 +76,7 @@
 - There is a very high variance in scores, because it's a game with a lot of randomness and hidden information. Even AIs that are very good at avoiding the Queen can still be stuck with a bad hand that makes winning her all but inevitable. (for instance, if the King of Spades is your only spade, and Deedee leads with the Queen.)
 - This means that many games have to be played to measure the effectiveness of an AI.
 
-![perforamance](nice_graph.png)
+![perforamance](best_graph.png)
 ![battle royale](big_test.png)
 
 ## Results
