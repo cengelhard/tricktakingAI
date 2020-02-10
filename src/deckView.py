@@ -1,4 +1,4 @@
-import random as rand
+
 from pyrsistent import (PRecord, field,
 						pset_field, PSet, s, pset,
 						m, pmap,
@@ -17,13 +17,7 @@ class Card(PRecord):
 	rank = field(int)
 	key  = field(str)
 	name = field(str)
-	#remake key and name
-	#would be cool to make a "memoized" property for fields 
-	#that took a function to generate the value with.
-	def with_suit(s):
-		pass
-	def with_rank(s):
-		pass
+
 #recommend use this if you must create one.
 def card(r,s):
 	return Card(suit=s, rank=r, key=f"{rank_names[r]}{s}", name=f"{rank_names[r]} of {suit_names[s]}")

@@ -229,7 +229,9 @@ def deedee_fight(names, iterations=40, start=50, step=50, games_to_play=50, samp
 		return ax
 	return points_by_name, graph_it
 
-def ugh(ax, stats):
+#This was a last-minute graph that I made for the presentation.
+#Probably should remove?
+def graph_progress(ax, stats):
 	xs = np.arange(100,100*(30+1),100)
 	for name in ["Walter", "Peppy", "Galadriel", "Krang"]: 
 		ys = stats[name] 

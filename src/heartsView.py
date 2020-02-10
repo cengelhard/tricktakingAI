@@ -54,11 +54,13 @@ player_id = field(int,
 				  initial=-1,
 				  invariant=lambda n: (n>=-1 and n<4, f"player_id can't be {n}"))
 
-#TODO: use this in a View refactor. 
-#class Trick(PRecord):
-#	played = pvector_field(Card, initial=pvector([None, None, None, None]))
-#	leader = player_id
-#	winner = player_id
+#TODO: refactor with this structure
+# class Trick(PRecord):
+# 	#indexed by player id.
+# 	played = pvector_field((Card, type(None)), initial=v(None, None, None, None))
+# 	leader = player_id #who led.
+# 	def winner(self):
+# 		led_suit = self.played[self.leader].suit
 
 #the four players
 class GameState(PRecord):
@@ -67,7 +69,7 @@ class GameState(PRecord):
 	trick_leader = player_id
 	hand_count = unsigned 
 	trick_count = field(int, initial=0, invariant = lambda n: (n >= 0 and n <= 13, f"trick count should be betwen 0 and 12. got {n}")) 
-	#error = field(bool, initial=False)
+
 	#featurization might want this.
 	last_played = player_id
 
