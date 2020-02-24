@@ -1,0 +1,34 @@
+
+<!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="utf-8">
+
+    <title>Let's play Hearts</title>
+    <meta name="description" content="Hearts Game">
+    <meta name="author" content="cenglehard">
+
+    <script src="{{ url_for('static', filename='brython.js')}}"></script>
+    <script src="{{ url_for('static', filename='brython_stdlib.js')}}"></script>
+    <link rel="stylesheet" type="text/css" 
+          href="{{ url_for('static', filename='css/bootstrap.css') }}">
+  </head>
+
+  <body onload="brython()">
+    <script type="text/python" 
+            src="{{ url_for('static', filename='brapp.py') }}">
+    </script>
+
+    <div class="container">
+
+
+      <h1>Hearts Game</h1>
+      <input type="button" id="start_game_button" class="btn-primary"> Start </input>
+      <p> played this trick so far: <span id="played_so_far"></span> </p>
+      <p> your legal options: </p>
+      <ul id="play_options" />
+
+    </div>
+  </body>
+</html>
+
