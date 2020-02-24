@@ -106,6 +106,8 @@ class GameState(PRecord):
 		'''returns both positional and list form.'''
 		lens = [len(p.played) for p in self.players]
 		m = max(lens)
+		if m == 0:
+			return [], []
 		positional = pvector([p.played[-1] if len(p.played)==m else None for p in self.players])
 		tl = self.trick_leader
 		return positional, pvector(filter(None, positional.extend(positional)[tl:tl+4]))
