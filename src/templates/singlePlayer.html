@@ -10,6 +10,7 @@
 
     <script src="{{ url_for('static', filename='brython.js')}}"></script>
     <script src="{{ url_for('static', filename='brython_stdlib.js')}}"></script>
+
     <link rel="stylesheet" type="text/css" 
           href="{{ url_for('static', filename='css/bootstrap.css') }}">
   </head>
@@ -24,10 +25,12 @@
 
       <h1>Hearts Game</h1>
       <input type="button" id="start_game_button" class="btn-primary"> Start </input>
-      <p> played this trick so far: <span id="played_so_far"></span> </p>
-      <p> your legal options: </p>
+      <p> scores: <span id="scores"/> </p>
+      <p> previously: <span id="previous_played"/> </p>
+      <p> winner: <span id="previous_winner"/> </p>
+      <p> played: <span id="played_so_far"></span> </p>
+      <p> hand: </p>
       <ul id="play_options" />
-
     </div>
   </body>
 </html>

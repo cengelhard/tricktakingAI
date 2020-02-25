@@ -114,20 +114,22 @@ class GameState(PRecord):
 
 	def hand_done(self):
 		return self.trick_count == 12
-		#return all(len(p.played)==13 for p in self.players)
 
 	def current_turn(self):
 		'''whose turn is it?'''
-		if (len(self.players[0].played)):
-			_, played_so_far = self.played_this_trick()
-			num_played = len(played_so_far)
-			return (self.trick_leader + num_played)%4
+		# if (len(self.players[0].played)):
+		# 	_, played_so_far = self.played_this_trick()
+		# 	num_played = len(played_so_far)
+		# 	return (self.trick_leader + num_played)%4
+		# else:
+		# 	return -1
+
+		_, played_so_far = self.played_this_trick()
+		nplayed = len(played_so_far)
+		if (nplayed):
+			return (self.trick_leader + nplayed)%4
 		else:
 			return -1
-
-	def prev_turn(self):
-		'''whose turn was it?'''
-		pass
 
 	def legal_card(self, card, hand):
 		played, only_played = self.played_this_trick()

@@ -1,29 +1,41 @@
 from browser import document, ajax
 from browser.html import LI
 import json
-
+import pickle
 
 def display_solutions(req):
     print("hold up")
     info = json.loads(req.text)
-    print(info)
-    # note the syntax for setting the child text of an element
-    document['played_so_far'].html = str(info['current_played'])
+
+    played_so_far = info['played']
+    hand = info['hand']
+
+    nplayed = len(played_so_far)
+    document['previous_played'].html = str(info['previous'])
+    document['previous_winner'].html = info['winner']
+    document['played_so_far'].html = str(played_so_far) if not info['you lead'] else "You are leading the trick." 
     document['play_options'].html = ""
-    for ckey in info['legal_keys']:
-        button_id = "choose_"+ckey
-        document['play_options'] <= LI(
-            f'''<input type="button" id="{button_id}" class="btn-primary"> 
-                  {ckey} 
-                </input>''')
-        def pick_it(event):
+    def pick_by_key(ckey):
+        def pick(event):
             req = ajax.Ajax()
             req.bind('complete', get_gamestate)
-            req.open('POST', '/play_card', 'application/json')
+            req.open('POST', '/play_card')
             req.set_header('Content-Type', 'application/json')
             req.send(json.dumps({'game_id': str(gid), 'card_key': ckey}))
+        return pick
 
-        document[button_id].bind('click', pick_it)
+    for c in info['hand']:
+        ckey = c['key']
+        legal = c['legal']
+        button_id = "choose_"+ckey
+        document['play_options'] <= LI(
+            f'''<button 
+                       id="{button_id}" 
+                       class="btn-{"primary" if legal else "danger"}"
+                       {'disabled' if not legal else ''}> 
+                  {ckey} 
+                </button>''')
+        document[button_id].bind('click', pick_by_key(ckey))
 
 #global - a client can only have one active game at a time.
 gid = -1
@@ -37,7 +49,7 @@ def get_gamestate(req):
 
 def new_game(req):
     global gid
-    gid = json.loads(req.text)
+    gid = json.loads(req.text)['game_id']
     print(f"gid: {gid}")
     get_gamestate(req)
 
