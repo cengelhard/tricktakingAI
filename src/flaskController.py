@@ -188,7 +188,7 @@ def play(players, num_hands):
             while cont: #while the game isn't over
                 with games_lock:
                     games[gid] = state
-                time.sleep(2) #just for visuals. 
+                time.sleep(1) #just for visuals. 
                 pprint("yielding")
                 yield streamify(json_from_state(state, gid))
                 state, cont = cont(controllers)
