@@ -20,9 +20,9 @@
             src="{{ url_for('static', filename='single_player.py')}}">
     </script>
 
-    <div class="container">
+    <div id="root_container" class="container">
       <h1>Hearts Game</h1>
-<!-- I'm not a web dev so this is how I'm passing args to json/brython. -->
+<!-- I'm not a web dev so this is how I'm passing args to js/brython. -->
       <span id="gid" hidden>{{gid}}</span>
       <span id="pid" hidden>{{pid}}</span>
 <!--------------------------------------------->

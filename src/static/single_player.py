@@ -64,22 +64,28 @@ def display_public_info(info):
         req.set_header('Content-Type', 'application/json')
         req.send()
 
-
-
 def initial_public_info(req):
     return display_public_info(json.loads(req.text))
-# req = ajax.Ajax()
-# req.bind('complete', initial_public_info)
-# req.open('GET', f'/initial_public/{gid}')
-# req.set_header('Content-Type', 'application/json')
-# req.send()
 
 evtSource = window.EventSource.new(f'/game_stream/{gid}')
 
 def receive_stream(event):
     pprint("streaming")
     pprint(event.data)
-    display_public_info(json.loads(event.data))
+    data = json.loads(event.data)
+    final_scores = data.get('final scores')
+    if final_scores: #game is over.
+        winners = [i for i in range(4) if final_scores[i] == min(final_scores)]
+        root = document["root_container"]
+        win_msg = f"player {winners[0]} wins!" if len(winners)==1 else f"it's a tie between {str(winners)}!"
+        root.innerHTML = f''' <p>GAME OVER</p>
+            <p>final scores: {str(final_scores)} </p>
+            <p>{win_msg}</p>
+            <button id="play again" class="btn-primary"> play again? </button>
+        '''
+        document["play again"].bind("click", lambda evt: window.location.replace(data['new game url']))
+    else:
+        display_public_info(data)
 
 evtSource.onmessage = receive_stream
 window.on_message = receive_stream

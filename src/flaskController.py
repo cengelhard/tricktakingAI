@@ -90,13 +90,10 @@ def pick_card():
 def FlaskController(gid, pid):
 
     def play_trick(hand, state):
-        #listen() will fill this in on another thread.
-        #rule of thumb: keep locks simple and short and don't compose them.
+
         #this lock only exists while waiting for a client to give a message.
-        #TODO: timeout? vote-kick? host can kick?
-        #      some way to get rid of a player who is taking too long.
         card = None
-        lock = RLock()
+        lock = RLock() 
 
         pprint('a')
 
@@ -111,7 +108,7 @@ def FlaskController(gid, pid):
         with card_choice_lock:
             card_choice_listeners[f"{gid}_{pid}"] = listen
        
-        #block the thread.
+        #block the thread waiting for a response from the client.
         while True:
             with lock:
                 if card != None:
@@ -124,7 +121,7 @@ def FlaskController(gid, pid):
         with card_choice_lock:
             card_choice_listeners[f"{gid}_{pid}"] = None
 
-        #take the chosen card.
+        #return the chosen card.
         return card
 
     return HeartsAdapter(pid, HeartsController(
@@ -141,6 +138,7 @@ games_lock = RLock() #make sure reads and writes are atomic
 game_streams = {}
 streams_lock = RLock() #I hate how many locks there are, it worries me.
 
+#just for testing.
 @app.route('/initial_public/<int:gid>')
 def initial_public(gid):
     state = None
@@ -183,6 +181,8 @@ def play(players, num_hands):
             controllers.append(controller_cast[name](i))
 
     def stream():
+        def streamify(s):
+            return "data: "+s+"\n\n"
         def eventStream():
             nonlocal state, cont
             while cont: #while the game isn't over
@@ -190,8 +190,12 @@ def play(players, num_hands):
                     games[gid] = state
                 time.sleep(2) #just for visuals. 
                 pprint("yielding")
-                yield "data: "+json_from_state(state, gid)+"\n\n"
+                yield streamify(json_from_state(state, gid))
                 state, cont = cont(controllers)
+            with app.test_request_context():
+                yield streamify(json.dumps({
+                    'final scores': [p.total_points() for p in state.players],
+                    'new game url': url_for("game_creation")}))
             #TODO: yield end of game info.
         return Response(eventStream(), mimetype="text/event-stream")
 
@@ -231,15 +235,18 @@ if __name__ == '__main__':
 
 '''
 TODO:
+
++ finish game creation screen.
+  - add AIs after training them
++ multiple hands
+- end game info dump
+  - "play again?" button.
 - host it on aws
   - test multiplayer more.
   - train some AIs on aws.
-- finish game creation screen.
-  - add AIs after training them
-- multiple hands
-- end game info dump
-  - "play again?" button.
-- perf issues.
+
+- perf
+- beauty
 
 '''
 
