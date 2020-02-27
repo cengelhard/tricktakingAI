@@ -110,16 +110,13 @@ def FlaskController(gid, pid):
         #add the listener
         with card_choice_lock:
             card_choice_listeners[f"{gid}_{pid}"] = listen
-        
-        #bad
-        #app.add_url_rule(f'/play_card/{gid}/{pid}/<string:card_key>', 'listen', listen, methods=["POST"])
-        
+       
         #block the thread.
         while True:
             with lock:
                 if card != None:
                     break 
-            time.sleep(.1)
+            time.sleep(.01)
 
         pprint('b')
 
@@ -159,7 +156,6 @@ def get_stream(gid):
         stream = game_streams.get(gid)
     pprint("found it" if stream else "nope")
     return stream() if stream else Response("No such gid")
-
 
 @app.route('/start_game/<string:players>/<int:num_hands>', methods=['GET'])
 def play(players, num_hands):
@@ -201,9 +197,6 @@ def play(players, num_hands):
 
     with streams_lock:
         game_streams[gid] = stream
-    #the single_player page will listen to this.
-    #(and on complete it will ask about private information)
-    #app.add_url_rule(f'/game_stream/{gid}', 'game_stream', stream)
 
     #redirect the host to the game. 
     #host is assumed to be the first human.

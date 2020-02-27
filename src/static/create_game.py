@@ -12,7 +12,7 @@ def click(event):
     req.set_timeout(4, lambda: print("timed out."))
     #hard coding the start game options for now.
     req.open('GET', 
-        f'/start_game/{json.dumps(["Human", "Human", "Dexter", "Deedee"])}/{1}', True)
+        f'/start_game/{json.dumps(["Human", "Deedee", "Dexter", "Deedee"])}/{1}', True)
     req.set_header('Content-Type', 'application/json')
     req.send()
 
