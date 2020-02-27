@@ -1,13 +1,10 @@
-from browser import document, ajax
+from browser import document, ajax, window
 from browser.html import LI
 import json
 import pickle
 
 def new_game(req):
-    global gid
-    gid = json.loads(req.text)['game_id']
-    print(f"gid: {gid}")
-    get_gamestate(req)
+    window.location.replace(req.text)
 
 def click(event):
     req = ajax.Ajax()
@@ -15,7 +12,7 @@ def click(event):
     req.set_timeout(4, lambda: print("timed out."))
     #hard coding the start game options for now.
     req.open('GET', 
-        f'/start_game/{json.dumps(["Human", "Deedee", "Dexter", "Deedee"])}/{1}', True)
+        f'/start_game/{json.dumps(["Human", "Human", "Dexter", "Deedee"])}/{1}', True)
     req.set_header('Content-Type', 'application/json')
     req.send()
 

@@ -4,12 +4,16 @@ from heartsModel import HeartsGame
 from deckView import deck52
 import json
 import pickle
-from flask import Flask, redirect, jsonify, render_template, escape, request, stream_with_context, Response
+from flask import Flask, redirect, url_for, jsonify, render_template, escape, request, stream_with_context, Response
 from driver import controller_cast
 from threading import RLock
 import time
 
 app = Flask(__name__)
+
+def pprint(s):
+    pass
+    #print(s, flush=True)
 
 def no_pass(hand, passing_to, points):
      pass
@@ -53,8 +57,35 @@ def json_from_state(state, gid):
             'winner': previous_winner,
             'played': [c.key if c else "__" for c in played],
             'scores': [p.total_points() for p in state.players],
-            'gid': gid #not sure if this will be needed.
+            'gid': gid, #not sure if this will be needed.
+            'current turn': state.current_turn()
         })
+
+#this is a global mutable variable to avoid dynamically binding routes
+#which is apparently worse than global mutable variables?
+#keys = f"{gid}_{pid}"
+#values = listen function which closes over a nonlocal var in the controller.
+card_choice_listeners = {}
+card_choice_lock = RLock()
+
+@app.route('/play_card', methods=['POST'])
+def pick_card():
+
+    gid = request.form['gid']
+    pid = request.form['pid']
+    card_key = request.form['card_key']
+
+    pprint(f"player {pid} wants to play {card_key}")
+
+    listener = None
+    with card_choice_lock:
+        listener = card_choice_listeners.get(f"{gid}_{pid}")
+
+    if listener:
+        listener(card_key)
+        return Response("okay, good.")
+    else:
+        return Response("this gid/pid combo isn't currently listening.")
 
 def FlaskController(gid, pid):
 
@@ -67,12 +98,21 @@ def FlaskController(gid, pid):
         card = None
         lock = RLock()
 
+        pprint('a')
+
         def listen(card_key):
+            pprint('c')
             with lock:
+                pprint('d')
                 nonlocal card
                 card = card_from_key(card_key)
 
-        app.add_url_rule(f'/play_card/{gid}/{pid}/<string:card_key>', 'listen', listen, methods=["POST"])
+        #add the listener
+        with card_choice_lock:
+            card_choice_listeners[f"{gid}_{pid}"] = listen
+        
+        #bad
+        #app.add_url_rule(f'/play_card/{gid}/{pid}/<string:card_key>', 'listen', listen, methods=["POST"])
         
         #block the thread.
         while True:
@@ -80,6 +120,12 @@ def FlaskController(gid, pid):
                 if card != None:
                     break 
             time.sleep(.1)
+
+        pprint('b')
+
+        #remove the listener
+        with card_choice_lock:
+            card_choice_listeners[f"{gid}_{pid}"] = None
 
         #take the chosen card.
         return card
@@ -89,23 +135,45 @@ def FlaskController(gid, pid):
         play_trick = play_trick,
     ))
 
-#global game id.
-game_count = 0
-#global game states
-games = {}
-#make sure reads and writes are atomic
-games_lock = RLock()
+
+game_count = 0 #game id generator.
+games = {} #global game states
+games_lock = RLock() #make sure reads and writes are atomic
+
+#like games but holds Responses that contain generators.
+game_streams = {}
+streams_lock = RLock() #I hate how many locks there are, it worries me.
+
+@app.route('/initial_public/<int:gid>')
+def initial_public(gid):
+    state = None
+    with games_lock:
+        state = games.get(gid)
+    return Response(json_from_state(state, gid) if state else "bad gid")
+
+@app.route('/game_stream/<int:gid>', methods=["GET"])
+def get_stream(gid):
+    pprint("looking for a stream")
+    stream = None
+    with streams_lock:
+        stream = game_streams.get(gid)
+    pprint("found it" if stream else "nope")
+    return stream() if stream else Response("No such gid")
+
 
 @app.route('/start_game/<string:players>/<int:num_hands>', methods=['GET'])
 def play(players, num_hands):
 
     players = json.loads(players)
 
+    state, cont = HeartsGame(pass_phase=False, num_hands=num_hands)()
+
     gid = -1
     with games_lock:
-        global game_count
+        global game_count, games
         gid = game_count
         game_count += 1
+        games[gid] = state
 
     controllers = []
     first_human = -1
@@ -118,31 +186,31 @@ def play(players, num_hands):
         else:
             controllers.append(controller_cast[name](i))
 
-    state, cont = HeartsGame(pass_phase=False, num_hands=num_hands)()
-
-    global games
-    games[gid] = state
-
     def stream():
         def eventStream():
             nonlocal state, cont
             while cont: #while the game isn't over
-                state, cont = cont(controllers)
                 with games_lock:
                     games[gid] = state
-                yield "data: "+json_from_state(state, gid)
+                time.sleep(2) #just for visuals. 
+                pprint("yielding")
+                yield "data: "+json_from_state(state, gid)+"\n\n"
+                state, cont = cont(controllers)
             #TODO: yield end of game info.
         return Response(eventStream(), mimetype="text/event-stream")
 
-
+    with streams_lock:
+        game_streams[gid] = stream
     #the single_player page will listen to this.
     #(and on complete it will ask about private information)
-    app.add_url_rule(f'/game_stream/{gid}', 'game_stream', stream)
+    #app.add_url_rule(f'/game_stream/{gid}', 'game_stream', stream)
 
     #redirect the host to the game. 
     #host is assumed to be the first human.
     #the host can then share links for the other humans. 
-    return redirect(url_for(f'single_player/{gid}/{first_human}'))
+    #return redirect(url_for(f'single_player', gid=gid, pid=first_human))
+    #return single_player(gid, first_human)
+    return Response(url_for(f'single_player', gid=gid, pid=first_human))
  
 #get the private player info (or just info specific to a player).
 #TODO: add security so players can't cheat and see other players' hands
@@ -154,7 +222,7 @@ def player_info(gid, pid):
     if not state:
         return Response("bad game id")
 
-    hand = state.players[pid]
+    hand = state.players[pid].hand
     _, played_so_far = state.played_this_trick()
 
     return jsonify({
