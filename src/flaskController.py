@@ -229,4 +229,18 @@ def player_info(gid, pid):
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8001, debug=True, threaded=True)
 
+'''
+TODO:
+- host it on aws
+  - test multiplayer more.
+  - train some AIs on aws.
+- finish game creation screen.
+  - add AIs after training them
+- multiple hands
+- end game info dump
+  - "play again?" button.
+- perf issues.
+
+'''
+
     
