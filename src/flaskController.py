@@ -6,14 +6,15 @@ import json
 import pickle
 from flask import Flask, redirect, url_for, jsonify, render_template, escape, request, stream_with_context, Response
 from driver import controller_cast
-from threading import RLock
+from threading import RLock, Thread
+from queue import Queue
 import time
 
 app = Flask(__name__)
 
-def pprint(s):
+def pprint(*s):
     pass
-    #print(s, flush=True)
+    #print(*s, flush=True)
 
 def no_pass(hand, passing_to, points):
      pass
@@ -95,12 +96,8 @@ def FlaskController(gid, pid):
         card = None
         lock = RLock() 
 
-        pprint('a')
-
         def listen(card_key):
-            pprint('c')
             with lock:
-                pprint('d')
                 nonlocal card
                 card = card_from_key(card_key)
 
@@ -114,8 +111,6 @@ def FlaskController(gid, pid):
                 if card != None:
                     break 
             time.sleep(.01)
-
-        pprint('b')
 
         #remove the listener
         with card_choice_lock:
@@ -134,9 +129,16 @@ game_count = 0 #game id generator.
 games = {} #global game states
 games_lock = RLock() #make sure reads and writes are atomic
 
-#like games but holds Responses that contain generators.
-game_streams = {}
-streams_lock = RLock() #I hate how many locks there are, it worries me.
+
+#key is gid. val is list of queues. 
+#each stream has a queue
+#each game puts to all queues in its list. (a game is just a worker thread.)
+#connecting to a stream adds a queue to the list. 
+game_queues = {}
+queues_lock = RLock() 
+#the queues themselves are lockless, but the dictionary is not.
+#but it only needs to lock when a new stream connects or a game starts/finishes.
+#the streams theselves only know about their own queue.
 
 #just for testing.
 @app.route('/initial_public/<int:gid>')
@@ -148,12 +150,39 @@ def initial_public(gid):
 
 @app.route('/game_stream/<int:gid>', methods=["GET"])
 def get_stream(gid):
-    pprint("looking for a stream")
-    stream = None
-    with streams_lock:
-        stream = game_streams.get(gid)
-    pprint("found it" if stream else "nope")
-    return stream() if stream else Response("No such gid")
+    pprint("looking for a game queue list")
+
+    def streamify(s):
+        return "data: "+s+"\n\n"
+    
+    q = None
+    with queues_lock:
+        pprint(gid, game_queues)
+        qs = game_queues.get(gid)
+        if qs is not None:
+            q = Queue()
+            qs.append(q)
+    if q is not None:
+        pprint("found one")
+        def stream():
+            game_is_going = True
+            while game_is_going:
+                pprint("should yield something.")
+                state, game_is_going = q.get()
+                q.task_done()
+                if game_is_going:
+                    yield(streamify(json_from_state(state, gid)))
+                else:
+                    with app.test_request_context():
+                        yield streamify(json.dumps({
+                            'final scores': [p.total_points() for p in state.players],
+                            'new game url': url_for("game_creation")}))
+
+        
+        return Response(stream(), mimetype="text/event-stream")
+    pprint("didn't find one.")
+    return Response("no such gid")
+
 
 @app.route('/start_game/<string:players>/<int:num_hands>', methods=['GET'])
 def play(players, num_hands):
@@ -169,6 +198,10 @@ def play(players, num_hands):
         game_count += 1
         games[gid] = state
 
+    local_queues = [] #will be mutated in place I think.
+    with queues_lock:
+        game_queues[gid] = local_queues #this will be filled in when clients connect.
+
     controllers = []
     first_human = -1
     for i in range(4):
@@ -180,27 +213,40 @@ def play(players, num_hands):
         else:
             controllers.append(controller_cast[name](i))
 
-    def stream():
-        def streamify(s):
-            return "data: "+s+"\n\n"
-        def eventStream():
-            nonlocal state, cont
-            while cont: #while the game isn't over
-                with games_lock:
-                    games[gid] = state
-                time.sleep(1) #just for visuals. 
-                pprint("yielding")
-                yield streamify(json_from_state(state, gid))
-                state, cont = cont(controllers)
-            with app.test_request_context():
-                yield streamify(json.dumps({
-                    'final scores': [p.total_points() for p in state.players],
-                    'new game url': url_for("game_creation")}))
-            #TODO: yield end of game info.
-        return Response(eventStream(), mimetype="text/event-stream")
+    #will wait for somebody to connect.
+    #will push all new states to all queues.
+    #has its own thread and mostly pushes to queues.
+    def run_game():
+        nonlocal state, cont
 
-    with streams_lock:
-        game_streams[gid] = stream
+        #first wait for somebody to connect.
+        while True:
+            with queues_lock:
+                if len(local_queues):
+                    break
+            time.sleep(1)
+
+        while cont:
+            state, cont = cont(controllers)
+            with games_lock:
+                games[gid] = state
+            with queues_lock:
+                for q in local_queues:
+                    q.put((state, cont))
+            time.sleep(2)
+
+        with games_lock:
+            games.pop(gid)
+        with queues_lock:
+            game_queues.pop(gid)
+            '''
+            notably, any queues still in use will still exist
+            and not be garbage collected until they are done.
+            but NEW queues/streams will not be possible.
+            '''
+
+    t = Thread(target=run_game, daemon=True)
+    t.start()
 
     #redirect the host to the game. 
     #host is assumed to be the first human.
@@ -229,6 +275,7 @@ def player_info(gid, pid):
             'you lead': len(played_so_far)%4 == 0,
             'gid': gid #not sure if this will be needed.
         })
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80, debug=True, threaded=True)
