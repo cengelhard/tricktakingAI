@@ -7,8 +7,8 @@ from threading import RLock, Lock
 from queue import Queue
 
 def pprint(*args):
-    #pass
-    print(*args)
+    pass
+    #print(*args)
 
 #global - a client can only have one active game at a time.
 #these are rendered to hidden elements on the html
@@ -53,6 +53,24 @@ def display_public_info(info):
                   {ckey} 
                 </button>''')
         document[button_id].bind('click', pick_by_key(ckey))
+    names = ["Dexter", "Peppy", "Galadriel", "Krang", "Walter"]
+    hints_ul = document["hint_buttons"]
+    if my_turn:
+        def handle_hint(button_id, name):
+            def get_hint(event):
+                document[button_id].innerHTML = name+": "+info['hints'][name]
+            return get_hint
+        hints_ul.innerHTML = ""
+        for name in names:
+            button_id = "give_hint_"+name
+            hints_ul <= LI(f'''
+                <button id="{button_id}" class="btn-primary">{name}</button>
+            ''')
+
+            document[button_id].bind("click", handle_hint(button_id, name))
+    else:
+        hints_ul.innerHTML = ""
+            
 
 
 evtSource = window.EventSource.new(f'/game_stream/{gid}/{pid}')
@@ -93,7 +111,7 @@ def receive_stream(event):
 evtSource.onmessage = receive_stream
 window.on_message = receive_stream
 
-window.setInterval(take_from_queue, 1000)
+window.setInterval(take_from_queue, 500)
 
 
 

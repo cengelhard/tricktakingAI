@@ -5,7 +5,7 @@ from deckView import deck52
 import json
 import pickle
 from flask import Flask, redirect, url_for, jsonify, render_template, escape, request, stream_with_context, Response
-from driver import controller_cast
+from driver import controller_cast, load_all
 from threading import RLock, Thread
 from queue import Queue
 import time
@@ -15,6 +15,11 @@ app = Flask(__name__)
 def pprint(*s):
     pass
     #print(*s, flush=True)
+
+try:
+    load_all()
+except:
+    pprint("failed loading some models.")
 
 def no_pass(hand, passing_to, points):
      pass
@@ -41,7 +46,7 @@ def controllers_play_card(card_key):
 #This is the PUBLIC information about a game.
 #if you want player specific information (like your hand), 
 #use /player_info/{pid}
-def json_from_state(state, gid, pid):
+def json_from_state(state, gid, pid, cont):
 
     played, played_so_far = state.played_this_trick()
     nplayed = len(played_so_far)
@@ -53,6 +58,19 @@ def json_from_state(state, gid, pid):
         previous_winner = state.trick_leader
         previous = [p.played[trick-1].key for p in state.players]
 
+    curr_turn = state.current_turn()
+    hints = {} #make hints
+    if curr_turn == pid: 
+        pprint(f"DOING LOOK AHEAD for {pid}")
+        for name in ["Dexter", "Peppy", "Galadriel", "Krang", "Walter"]:
+            controller = controller_cast.get(name)
+            if controller is None:
+                print(f"couldn't find controller {name}")
+                continue
+            controllers = [controller(i) if i==pid else random_legal_controller(i) for i in range(4)]
+            look_ahead_state, _ = cont(controllers)
+            hints[name] = look_ahead_state.players[pid].played[-1].key
+
     hand = state.players[pid].hand
 
     return json.dumps({
@@ -62,10 +80,11 @@ def json_from_state(state, gid, pid):
             'played': [c.key if c else "__" for c in played],
             'scores': [p.total_points() for p in state.players],
             'gid': gid, #not sure if this will be needed.
-            'current turn': state.current_turn(),
+            'current turn': curr_turn,
             'hand': [{'key': c.key, 
                       'legal': state.legal_card(c, hand)} 
                       for c in hand],
+            'hints': hints
         })
 
 #this is a global mutable variable to avoid dynamically binding routes
@@ -167,7 +186,7 @@ def get_stream(gid, pid):
                 state, game_is_going = q.get()
                 q.task_done()
                 if game_is_going:
-                    yield(streamify(json_from_state(state, gid, pid)))
+                    yield(streamify(json_from_state(state, gid, pid, game_is_going)))
                 else:
                     with app.test_request_context():
                         yield streamify(json.dumps({
@@ -177,8 +196,9 @@ def get_stream(gid, pid):
         
         return Response(stream(), mimetype="text/event-stream")
     pprint("didn't find one.")
-    return Response("no such gid")
+    return Response("no such gid") 
 
+human_names = {"Human"}
 
 @app.route('/start_game/<string:players>/<int:num_hands>', methods=['GET'])
 def play(players, num_hands):
@@ -201,7 +221,7 @@ def play(players, num_hands):
     first_human = -1
     for i in range(4):
         name = players[i]
-        if name == "Human":
+        if name in human_names:
             if first_human == -1:
                 first_human = i
             controllers.append(FlaskController(gid, i))

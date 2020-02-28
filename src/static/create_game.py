@@ -6,7 +6,7 @@ import pickle
 def new_game(req):
     window.location.replace(req.text)
 
-full_cast = ["Human", "Deedee", "Dexter"]
+full_cast = ["Human", "Deedee", "Dexter", "Walter", "Galadriel", "Krang", "Peppy"]
 controller_nams = ["Human", "Deedee", "Dexter", "Deedee"]
 
 def click(event):
