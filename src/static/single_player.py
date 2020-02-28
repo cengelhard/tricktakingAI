@@ -1,11 +1,14 @@
-from browser import document, ajax, window, bind
+from browser import document, ajax, window, bind, timer
 from browser.html import LI
 import json
 import pickle
+import time
+from threading import RLock, Lock
+from queue import Queue
 
 def pprint(*args):
-    pass
-    #print(*args)
+    #pass
+    print(*args)
 
 #global - a client can only have one active game at a time.
 #these are rendered to hidden elements on the html
@@ -13,13 +16,18 @@ def pprint(*args):
 gid = int(document['gid'].innerHTML)
 pid = int(document['pid'].innerHTML)
 
-def display_private_info(req):
-    pprint("private")
-    info = json.loads(req.text)
+def display_public_info(info):
+    played_so_far = info['played']
 
-    #overwrite it.
-    if info["you lead"]:
-        document['played_so_far'].html = "You are leading the trick."
+    nplayed = len(played_so_far)
+    document['previous_played'].html = str(info['previous'])
+    document['played_so_far'].html = str(played_so_far) #if not info['you lead'] else "You are leading the trick." 
+    document['scores'].html = str(info['scores'])
+
+    if info["winner leading"]:
+        winner = info['winner']
+        lead_text = "You are" if winner == pid else f"Player {winner} is"
+        document['played_so_far'].html = f"{lead_text} leading the trick."
     hand = info['hand']
 
     document['play_options'].html = ""
@@ -32,10 +40,10 @@ def display_private_info(req):
             req.set_header('content-type', 'application/x-www-form-urlencoded')
             req.send({'gid': gid, 'pid': pid, 'card_key': ckey})
         return pick
-
+    my_turn = info['current turn'] == pid
     for c in info['hand']:
         ckey = c['key']
-        legal = c['legal']
+        legal = my_turn and c['legal']
         button_id = "choose_"+ckey
         document['play_options'] <= LI(
             f'''<button 
@@ -46,32 +54,11 @@ def display_private_info(req):
                 </button>''')
         document[button_id].bind('click', pick_by_key(ckey))
 
-def display_public_info(info):
-    pprint("public")
-    pprint(info)
-    played_so_far = info['played']
 
-    nplayed = len(played_so_far)
-    document['previous_played'].html = str(info['previous'])
-    document['previous_winner'].html = info['winner']
-    document['played_so_far'].html = str(played_so_far) #if not info['you lead'] else "You are leading the trick." 
-    document['scores'].html = str(info['scores'])
+evtSource = window.EventSource.new(f'/game_stream/{gid}/{pid}')
 
-    if info['current turn'] == pid:
-        req = ajax.Ajax()
-        req.bind('complete', display_private_info)
-        req.open('GET', f'/player_info/{gid}/{pid}')
-        req.set_header('Content-Type', 'application/json')
-        req.send()
-
-def initial_public_info(req):
-    return display_public_info(json.loads(req.text))
-
-evtSource = window.EventSource.new(f'/game_stream/{gid}')
-
-def receive_stream(event):
-    pprint("streaming")
-    pprint(event.data)
+def render_stream(event):
+    pprint("rendering...")
     data = json.loads(event.data)
     final_scores = data.get('final scores')
     if final_scores: #game is over.
@@ -87,8 +74,31 @@ def receive_stream(event):
     else:
         display_public_info(data)
 
+q = Queue()
+
+def take_from_queue():
+    try:
+        event = q.get(False)
+    except:
+        return
+    render_stream(event)
+    q.task_done()
+    
+    
+
+def receive_stream(event):
+    q.put(event)
+        
+
 evtSource.onmessage = receive_stream
 window.on_message = receive_stream
+
+window.setInterval(take_from_queue, 1000)
+
+
+
+
+
 
 
 

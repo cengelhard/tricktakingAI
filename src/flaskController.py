@@ -41,7 +41,7 @@ def controllers_play_card(card_key):
 #This is the PUBLIC information about a game.
 #if you want player specific information (like your hand), 
 #use /player_info/{pid}
-def json_from_state(state, gid):
+def json_from_state(state, gid, pid):
 
     played, played_so_far = state.played_this_trick()
     nplayed = len(played_so_far)
@@ -53,13 +53,19 @@ def json_from_state(state, gid):
         previous_winner = state.trick_leader
         previous = [p.played[trick-1].key for p in state.players]
 
+    hand = state.players[pid].hand
+
     return json.dumps({
             'previous': previous,
             'winner': previous_winner,
+            'winner leading': len(played_so_far)%4 == 0,
             'played': [c.key if c else "__" for c in played],
             'scores': [p.total_points() for p in state.players],
             'gid': gid, #not sure if this will be needed.
-            'current turn': state.current_turn()
+            'current turn': state.current_turn(),
+            'hand': [{'key': c.key, 
+                      'legal': state.legal_card(c, hand)} 
+                      for c in hand],
         })
 
 #this is a global mutable variable to avoid dynamically binding routes
@@ -126,9 +132,7 @@ def FlaskController(gid, pid):
 
 
 game_count = 0 #game id generator.
-games = {} #global game states
 games_lock = RLock() #make sure reads and writes are atomic
-
 
 #key is gid. val is list of queues. 
 #each stream has a queue
@@ -140,16 +144,8 @@ queues_lock = RLock()
 #but it only needs to lock when a new stream connects or a game starts/finishes.
 #the streams theselves only know about their own queue.
 
-#just for testing.
-@app.route('/initial_public/<int:gid>')
-def initial_public(gid):
-    state = None
-    with games_lock:
-        state = games.get(gid)
-    return Response(json_from_state(state, gid) if state else "bad gid")
-
-@app.route('/game_stream/<int:gid>', methods=["GET"])
-def get_stream(gid):
+@app.route('/game_stream/<int:gid>/<int:pid>', methods=["GET"])
+def get_stream(gid, pid):
     pprint("looking for a game queue list")
 
     def streamify(s):
@@ -171,7 +167,7 @@ def get_stream(gid):
                 state, game_is_going = q.get()
                 q.task_done()
                 if game_is_going:
-                    yield(streamify(json_from_state(state, gid)))
+                    yield(streamify(json_from_state(state, gid, pid)))
                 else:
                     with app.test_request_context():
                         yield streamify(json.dumps({
@@ -196,7 +192,6 @@ def play(players, num_hands):
         global game_count, games
         gid = game_count
         game_count += 1
-        games[gid] = state
 
     local_queues = [] #will be mutated in place I think.
     with queues_lock:
@@ -228,15 +223,11 @@ def play(players, num_hands):
 
         while cont:
             state, cont = cont(controllers)
-            with games_lock:
-                games[gid] = state
             with queues_lock:
                 for q in local_queues:
                     q.put((state, cont))
-            time.sleep(2)
+            time.sleep(.1) 
 
-        with games_lock:
-            games.pop(gid)
         with queues_lock:
             game_queues.pop(gid)
             '''
@@ -254,27 +245,7 @@ def play(players, num_hands):
     #return redirect(url_for(f'single_player', gid=gid, pid=first_human))
     #return single_player(gid, first_human)
     return Response(url_for(f'single_player', gid=gid, pid=first_human))
- 
-#get the private player info (or just info specific to a player).
-#TODO: add security so players can't cheat and see other players' hands
-@app.route("/player_info/<int:gid>/<int:pid>", methods=['GET'])
-def player_info(gid, pid):
-    state = None
-    with games_lock:
-        state = games.get(gid)
-    if not state:
-        return Response("bad game id")
 
-    hand = state.players[pid].hand
-    _, played_so_far = state.played_this_trick()
-
-    return jsonify({
-            'hand': [{'key': c.key, 
-                      'legal': state.legal_card(c, hand)} 
-                      for c in hand],
-            'you lead': len(played_so_far)%4 == 0,
-            'gid': gid #not sure if this will be needed.
-        })
 
 
 if __name__ == '__main__':
@@ -286,13 +257,14 @@ TODO:
 + finish game creation screen.
   - add AIs after training them
 + multiple hands
-- end game info dump
-  - "play again?" button.
-- host it on aws
-  - test multiplayer more.
++ end game info dump
+  + "play again?" button.
++ host it on aws
+  + test multiplayer more.
   - train some AIs on aws.
 
 - perf
+  - do the delay on the client side.
 - beauty
 
 '''
