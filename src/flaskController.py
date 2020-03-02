@@ -51,7 +51,7 @@ def json_from_state(state, gid, pid, cont):
     played, played_so_far = state.played_this_trick()
     nplayed = len(played_so_far)
 
-    trick = state.trick_count
+    trick = state.trick_count + 13*state.hand_count
     previous = []
     previous_winner = -1
     if trick > 0:
