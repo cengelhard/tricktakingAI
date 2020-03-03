@@ -42,6 +42,9 @@ total_cols = new_trick + 1
 def card_to_col(card):
 	return deck52.index(card)*cols_per_card
 
+def regularize_points(p):
+	return (p+10)/(26+10)
+
 #this is from the perspective of the previous player.
 #basically, how the most recently played card sees the world.
 def featurize_state(state, row = None):
@@ -65,9 +68,9 @@ def featurize_state(state, row = None):
 		row[card_to_col(card)+on_table]=1
 
 	row[trick_count]     = state.trick_count/13
-	row[points_on_table] = sum(map(hearts_points, state.played_this_trick()[1]))/26
-	row[points_in_hand]  = sum(map(hearts_points, player.hand))/26
-	row[points_won]      = sum(sum(map(hearts_points, p.won)) for p in state.players)/26
+	row[points_on_table] = regularize_points(sum(map(hearts_points, state.played_this_trick()[1])))
+	row[points_in_hand]  = regularize_points(sum(map(hearts_points, player.hand)))
+	row[points_won]      = regularize_points(sum(sum(map(hearts_points, p.won)) for p in state.players))
 	row[danger]          = row[trick_count] * (1-row[points_on_table]-row[points_in_hand]-row[points_won])
 	row[highest_rank]    = (max(card.rank for card in played_cards)+1)/13
 	row[recent_rank]     = (played_cards[-1].rank+1)/13
@@ -123,7 +126,7 @@ def np_from_controllers(controllers=default_controllers, iterations=10, samples=
 		#print(scores)
 		for yi in range(starting_xi, xi):
 			#get the score for the current players.
-			y[yi] = scores[(y_pids[yi-starting_xi])]/26
+			y[yi] = regularize_points(scores[(y_pids[yi-starting_xi])])
 	#print(Counter(y))
 	return np.array(X),np.array(y)
 

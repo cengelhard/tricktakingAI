@@ -6,8 +6,9 @@ from pyrsistent import (PRecord, field,
 						l, plist)
 
 def hearts_points(card):
-	return 1 if card.suit == "♥" else 13 if card.key == "Q♠" else 0
+	#return 1 if card.suit == "♥" else 13 if card.key == "Q♠" else 0
 	#return 2 if card.suit == "♥" else 0
+	return 1 if card.suit == "♥" else 13 if card.key == "Q♠" else -10 if card.key == "J♦" else 0
 
 len4 = lambda p: (len(p)==4, "must be len 4")
 
@@ -72,6 +73,7 @@ class GameState(PRecord):
 
 	#featurization might want this.
 	last_played = player_id
+	#hearts_broke = field(bool, initial=False)
 
 
 	def _delta_pass(self, from_pid, dir):
@@ -134,6 +136,9 @@ class GameState(PRecord):
 	def legal_card(self, card, hand):
 		played, only_played = self.played_this_trick()
 		lsuit = played[self.trick_leader].suit
+
+
+
 		not_in_hand = not (card in hand)
 		not_first_play = len(only_played) != 4
 		wrong_suit = card.suit != lsuit
