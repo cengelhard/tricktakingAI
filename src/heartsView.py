@@ -73,7 +73,7 @@ class GameState(PRecord):
 
 	#featurization might want this.
 	last_played = player_id
-	#hearts_broke = field(bool, initial=False)
+	hearts_broke = field(bool, initial=False)
 
 
 	def _delta_pass(self, from_pid, dir):
@@ -135,12 +135,19 @@ class GameState(PRecord):
 
 	def legal_card(self, card, hand):
 		played, only_played = self.played_this_trick()
+
+		first_play = len(only_played) == 4
+
+		#can only lead heart if hearts broke.
+		if (first_play and 
+			card.suit == "♥" and 
+			not self.hearts_broke and 
+			not all(c.suit=="♥" for c in hand)):
+			return False
+
 		lsuit = played[self.trick_leader].suit
-
-
-
 		not_in_hand = not (card in hand)
-		not_first_play = len(only_played) != 4
+		not_first_play = not first_play
 		wrong_suit = card.suit != lsuit
 		no_excuse = lsuit in [c.suit for c in hand]
 		return not(not_in_hand or (not_first_play and wrong_suit and no_excuse))

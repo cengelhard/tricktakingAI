@@ -86,8 +86,8 @@ from collections import Counter
 #fewer data points per game?
 
 quick_game = HeartsGame(pass_phase=False, num_hands=1)
-default_controllers = [ctrl(i) for i, ctrl in enumerate([hyper_smart_controller(), random_legal_controller, hyper_smart_controller(), random_legal_controller])]
-#default_controllers = [ctrl(i) for i, ctrl in enumerate([random_legal_controller, random_legal_controller, random_legal_controller, random_legal_controller])]
+#default_controllers = [ctrl(i) for i, ctrl in enumerate([hyper_smart_controller(), random_legal_controller, hyper_smart_controller(), random_legal_controller])]
+default_controllers = [ctrl(i) for i, ctrl in enumerate([random_legal_controller, random_legal_controller, random_legal_controller, random_legal_controller])]
 #default_controllers = [ctrl(i) for i, ctrl in enumerate([hyper_smart_controller(), hyper_smart_controller(), hyper_smart_controller(), hyper_smart_controller()])]
 #returns X, y
 def np_from_controllers(controllers=default_controllers, iterations=10, samples=4, fixed_rows=True):

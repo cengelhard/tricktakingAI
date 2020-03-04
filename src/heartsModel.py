@@ -90,7 +90,7 @@ def HeartsGame(initial_state = default_state,
 					player = player.with_penalty()
 					substate = substate.set_player(pid, player) 
 
-				played_state = substate.set(last_played=pid).set_player(pid, player.play_card(card))
+				played_state = substate.set(last_played=pid, hearts_broke=(card.suit=="♥")).set_player(pid, player.play_card(card))
 				private_call(controllers, "alert_played", played_state)
 
 				played, only_played = played_state.played_this_trick()
